@@ -92,3 +92,10 @@ snapshot resolver while retaining the lock, pre-image, and rollback records.
 **Chose:** Catch only the test-double `NotImplementedError`, cache an empty advisor result, and map usage to `None`; real AWS errors remain provider failures and no timestamp is fabricated.
 **Rejected:** Removing Access Advisor, inventing timestamps, or bypassing the asynchronous poll in production.
 **Reversal cost:** Low; when moto adds the surface, the fallback becomes unused and the existing polling tests continue to validate the real path.
+
+## 2026-09-03 — m6 — Keep the approval broker dependency-light and fail closed
+
+**Ambiguity:** The M6 brief names LangGraph but the backend has no LangGraph runtime dependency or frozen broker contract, and it does not prescribe public helper signatures for Slack, ASL, or proposal persistence.
+**Chose:** Implement a typed LangGraph-compatible node callable, injectable `LLMClient` and proposal/audit ports, and a generated Standard Step Functions definition; invalid model output deterministically selects the highest-severity narrower scope present in the graph, or `none` when no narrower graph scope exists.
+**Rejected:** Adding a new runtime dependency or allowing model prose, unknown scopes, or wider scopes to reach a plan.
+**Reversal cost:** Low; a future Lambda packaging decision can wrap the node with LangGraph without changing the safety validators or pure card/ASL builders.
