@@ -6,6 +6,7 @@ import json
 from collections.abc import Iterable, Mapping, Sequence
 from datetime import datetime
 from pathlib import Path
+from threading import RLock
 from typing import cast
 
 from deadbolt.contracts.models import ActionResult, CredentialType, Entitlement, Scope
@@ -100,6 +101,8 @@ class FixtureProvider:
             sources = tuple(_mapping(item, "seed item") for item in seed)
         self._state: dict[_Key, _Record] = {}
         self._pre_images: dict[_Key, _Record] = {}
+        self._lock = RLock()
+        self._mutation_count = 0
         for source in sources:
             entitlement, record = _record_from_seed(system, source)
             key = self._key(entitlement)
@@ -145,14 +148,22 @@ class FixtureProvider:
         )
 
     def snapshot(self) -> Iterable[Entitlement]:
-        entitlements = tuple(self._entitlement(record) for record in self._state.values())
+        with self._lock:
+            entitlements = tuple(self._entitlement(record) for record in self._state.values())
         return tuple(sorted(entitlements, key=self._sort_key))
+
+    @property
+    def mutation_count(self) -> int:
+        """Count successful state-changing provider operations for executor tests."""
+        with self._lock:
+            return self._mutation_count
 
     def revoke(self, e: Entitlement, dry_run: bool) -> ActionResult:
         if e.system != self.system:
             raise ProviderError(f"entitlement belongs to {e.system}, not {self.system}")
         key = self._key(e)
-        pre_image = self._pre_images.get(key)
+        with self._lock:
+            pre_image = self._pre_images.get(key)
         if pre_image is None:
             raise ProviderError(f"unknown {self.system} entitlement: {key}")
         if not e.revocable:
@@ -166,9 +177,11 @@ class FixtureProvider:
                 "entitlement is not revocable",
                 0,
             )
-        was_present = key in self._state
-        if not dry_run:
-            self._state.pop(key, None)
+        with self._lock:
+            was_present = key in self._state
+            if not dry_run and was_present:
+                self._state.pop(key, None)
+                self._mutation_count += 1
         message = "dry-run: entitlement would be revoked" if dry_run else "entitlement revoked"
         if not was_present and not dry_run:
             message = "entitlement already revoked"
@@ -189,8 +202,10 @@ class FixtureProvider:
             raise ProviderError(f"pre-image belongs to {restored.system}, not {self.system}")
         key = self._key(restored)
         record = self._copy_record(dict(pre_image))
-        self._state[key] = record
-        self._pre_images[key] = self._copy_record(record)
+        with self._lock:
+            self._state[key] = record
+            self._pre_images[key] = self._copy_record(record)
+            self._mutation_count += 1
         return ActionResult(
             True,
             self.system,

@@ -66,3 +66,16 @@ changing the scoring formulas.
 **Chose:** Use the UTF-8 ordering, T1/T2/T0 seed exercised by `tests/unit/test_m3.py`; record its canonical body hash in `tests/gates/golden/plan_hash_seed_a.txt`.
 **Rejected:** Hashing envelope metadata or depending on UUID values.
 **Reversal cost:** Low; any semantic seed change requires an explicit golden update and decision entry.
+
+## 2026-09-03 — m4 — Resolve provider reads and audit ownership at the executor boundary
+
+**Ambiguity:** The frozen `EntitlementProvider` protocol has no point-read method, and the audit
+package was still empty when M4 required an audit write after execution.
+**Chose:** Resolve one target entitlement from the provider's deterministic `snapshot()` (fail
+closed on missing or ambiguous matches), and use a small injectable S3 `AuditWriter` owned by the
+executor workflow. Persist the lock and rollback metadata in DynamoDB, with `ttl`/`expires_at`
+fields and the original provider result serialized canonically for duplicate deliveries.
+**Rejected:** Changing frozen contracts, guessing an identity when multiple entitlements match, or
+adding a runtime queue/database dependency for audit delivery.
+**Reversal cost:** Medium; a future contract revision can add a point-read API and replace the
+snapshot resolver while retaining the lock, pre-image, and rollback records.
