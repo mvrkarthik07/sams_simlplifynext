@@ -35,3 +35,13 @@ The SPA currently uses the local deterministic mock in `frontend/src/lib/api.ts`
 **Chose:** Add the tracked `backend/deadbolt` symlink to `src/deadbolt`, preserving one source tree while making the gate's filesystem paths resolve.
 **Rejected:** Duplicating or shimming application modules, changing the protected Makefile, or weakening coverage.
 **Reversal cost:** Low; remove the symlink when the protected gate is human-corrected to use dotted package targets.
+
+## 2026-09-02 — m2 — Normalize engine inputs at the pure boundary
+
+**Ambiguity:** M0 froze only the existing `Entitlement` contract, while M2 requires identity,
+template, reachability, and finding values without defining new shared contract shapes.
+**Chose:** Keep the frozen contracts unchanged; accept provider-neutral mappings and provide
+immutable `Identity`, `RoleTemplate`, and `Finding` value objects in the engine boundary.
+**Rejected:** Importing provider or graph models into the engine, or modifying frozen contracts.
+**Reversal cost:** Low; a future contract revision can replace the boundary value objects without
+changing the scoring formulas.
