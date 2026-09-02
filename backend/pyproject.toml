@@ -1,0 +1,73 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "deadbolt"
+version = "0.1.0"
+description = "Deterministic entitlement drift detection and brokered revocation"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "boto3>=1.35",
+    "httpx>=0.27",
+    "pydantic>=2",
+    "structlog>=24.4",
+]
+
+[dependency-groups]
+dev = [
+    "freezegun>=1.5",
+    "import-linter>=2.3",
+    "moto[iam,s3,dynamodb,stepfunctions]>=5.0",
+    "mypy>=1.13",
+    "pytest>=8.3",
+    "pytest-cov>=6.0",
+    "pytest-randomly>=3.15",
+    "respx>=0.22",
+    "ruff>=0.8",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/deadbolt"]
+
+[tool.pytest.ini_options]
+addopts = "--strict-markers"
+pythonpath = ["."]
+testpaths = ["tests"]
+markers = [
+    "m0: milestone 0 contract and tooling tests",
+    "m1: milestone 1 fixture and graph tests",
+    "m2: milestone 2 drift engine tests",
+    "m3: milestone 3 plan tests",
+    "m4: milestone 4 executor tests",
+    "m5: milestone 5 real provider tests",
+    "m6: milestone 6 broker tests",
+    "m7: milestone 7 audit tests",
+    "m8: milestone 8 end-to-end tests",
+    "m9: milestone 9 infrastructure tests",
+    "determinism: deterministic output tests",
+    "rollback: rollback tests",
+    "e2e: end-to-end tests",
+    "live: tests requiring explicitly enabled live infrastructure",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "UP", "B", "S", "DTZ", "PL", "RUF"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = ["S101"]
+"src/deadbolt/errors.py" = ["N818"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+disallow_any_explicit = true
+mypy_path = "src"
+
+[[tool.mypy.overrides]]
+module = ["deadbolt.engine.*", "deadbolt.plan.*"]
+disallow_any_explicit = true
