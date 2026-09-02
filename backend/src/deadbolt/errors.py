@@ -21,7 +21,17 @@ class IdempotencyConflict(DeadboltError):
     """A different operation already owns the idempotency key."""
 
 
+class AuditConfigurationError(DeadboltError):
+    """Audit persistence has invalid or incomplete immutable-storage settings."""
+
+
+class AuditChainError(DeadboltError):
+    """An audit chain is malformed or cannot be safely extended."""
+
+
 __all__ = [
+    "AuditChainError",
+    "AuditConfigurationError",
     "DeadboltError",
     "IdempotencyConflict",
     "IrreversibleActionError",

@@ -99,3 +99,29 @@ snapshot resolver while retaining the lock, pre-image, and rollback records.
 **Chose:** Implement a typed LangGraph-compatible node callable, injectable `LLMClient` and proposal/audit ports, and a generated Standard Step Functions definition; invalid model output deterministically selects the highest-severity narrower scope present in the graph, or `none` when no narrower graph scope exists.
 **Rejected:** Adding a new runtime dependency or allowing model prose, unknown scopes, or wider scopes to reach a plan.
 **Reversal cost:** Low; a future Lambda packaging decision can wrap the node with LangGraph without changing the safety validators or pure card/ASL builders.
+
+## 2026-09-03 — m7 — Use the OpenTelemetry SDK behind the ADOT Lambda layer
+
+**Ambiguity:** M7 requires in-memory span verification and ADOT/OTLP export wiring, but the
+backend had no tracing runtime and infrastructure is reserved for M9.
+**Chose:** Add `opentelemetry-api` and `opentelemetry-sdk` as small runtime dependencies, keep
+the exporter injectable for tests, and emit the ADOT Lambda layer environment contract for
+deployment. The layer supplies the collector/export path to CloudWatch; no direct AWS call is
+made by application imports.
+**Rejected:** A handwritten tracing protocol that could not verify W3C propagation, or adding a
+full exporter stack that duplicates the ADOT layer in every Lambda bundle.
+**Reversal cost:** Low; the exporter can be selected at the Lambda packaging boundary without
+changing stage naming, propagation, or redaction behavior. The SDK adds a modest cold-start and
+bundle cost, accepted for G6 trace evidence.
+
+## 2026-09-03 — m7 — Keep audit retention configuration explicit and legacy-compatible
+
+**Ambiguity:** Existing M4 callers construct an audit writer without immutable-storage settings,
+while M7 requires Object Lock and does not assign infrastructure ownership until M9.
+**Chose:** Require `AuditConfig` or `AuditWriter.from_env()` for Object Lock writes, preserve the
+legacy injectable writer shape for offline M4 tests, and expose a one-day CloudWatch retention
+helper for the later infrastructure adapter.
+**Rejected:** Hardcoding Governance mode in the writer, changing protected gates, or modifying
+`infra/` before M9.
+**Reversal cost:** Low; M9 only needs to pass the deployment config and invoke the retention
+helper.
