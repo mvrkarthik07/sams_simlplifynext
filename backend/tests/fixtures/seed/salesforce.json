@@ -1,0 +1,35 @@
+[
+  {
+    "email": "Aisha.Rahman@example.com",
+    "identity_id": "sf-aisha",
+    "resource": "salesforce:object:Opportunity",
+    "scope": "admin",
+    "granted_at": "2025-01-15T09:00:00Z",
+    "last_used_at": "2025-03-01T10:30:00Z",
+    "credential_type": "oauth",
+    "revocable": true,
+    "raw": {"profile": "Modify All Data", "object": "Opportunity"}
+  },
+  {
+    "email": "ben.chen@example.com",
+    "identity_id": "sf-ben",
+    "resource": "salesforce:object:Account",
+    "scope": "write",
+    "granted_at": "2025-04-10T09:00:00Z",
+    "last_used_at": null,
+    "credential_type": "federated",
+    "revocable": true,
+    "raw": {"profile": "Sales Operations", "object": "Account"}
+  },
+  {
+    "email": "carla.gomez@example.com",
+    "identity_id": "sf-carla",
+    "resource": "salesforce:object:Case",
+    "scope": "read",
+    "granted_at": "2025-06-20T09:00:00Z",
+    "last_used_at": "2025-08-20T12:00:00Z",
+    "credential_type": "federated",
+    "revocable": true,
+    "raw": {"profile": "Support Read Only", "object": "Case"}
+  }
+]

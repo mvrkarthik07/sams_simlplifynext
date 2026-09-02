@@ -1,0 +1,35 @@
+[
+  {
+    "email": "aisha.rahman@example.com",
+    "identity_id": "wd-aisha",
+    "resource": "workday:report:employee-directory",
+    "scope": "read",
+    "granted_at": "2024-12-01T09:00:00Z",
+    "last_used_at": "2025-07-01T08:00:00Z",
+    "credential_type": "federated",
+    "revocable": true,
+    "raw": {"job_title": "Engineering Manager", "report": "employee-directory"}
+  },
+  {
+    "email": "david.lee@example.com",
+    "identity_id": "wd-david",
+    "resource": "workday:report:payroll",
+    "scope": "billing",
+    "granted_at": "2025-02-10T09:00:00Z",
+    "last_used_at": null,
+    "credential_type": "oauth",
+    "revocable": true,
+    "raw": {"job_title": "Finance Analyst", "report": "payroll"}
+  },
+  {
+    "email": "erin.park@example.com",
+    "identity_id": "wd-erin",
+    "resource": "workday:report:benefits",
+    "scope": "read",
+    "granted_at": "2025-05-08T09:00:00Z",
+    "last_used_at": "2025-08-30T08:00:00Z",
+    "credential_type": "federated",
+    "revocable": true,
+    "raw": {"job_title": "People Operations", "report": "benefits"}
+  }
+]

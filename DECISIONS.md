@@ -21,3 +21,17 @@ The SPA currently uses the local deterministic mock in `frontend/src/lib/api.ts`
 **Chose:** Keep the protected initializer byte-identical and define the public contract in new typed modules under `deadbolt.contracts`; use `MappingProxyType` for detached immutable mapping views.
 **Rejected:** Editing or re-blessing the protected initializer.
 **Reversal cost:** Low; a human-approved future contract revision can add re-exports after the freeze policy is intentionally changed.
+
+## 2026-09-02 — m1 — Protected coverage target uses filesystem-incompatible source names
+
+**Ambiguity:** `make gate-m1` passes `--cov=deadbolt/contracts` and `--cov=deadbolt/providers/fixtures`, but M0 requires the application package under `backend/src/deadbolt/`; pytest-cov treats the slash-form values as unimported modules and collects 0 statements.
+**Chose:** Keep the protected Makefile unchanged, implement the application under the required `src/` layout, and verify the equivalent dot-form coverage targets at 99.29%.
+**Rejected:** Editing the protected Makefile, adding duplicate/shim packages solely to make an invalid coverage source path resolve, or weakening the coverage threshold.
+**Reversal cost:** Low; the gate can be corrected by changing only the two coverage arguments to `deadbolt.contracts` and `deadbolt.providers.fixtures`.
+
+## 2026-09-02 — m1 — Resolve protected slash-form coverage paths with a source alias
+
+**Ambiguity:** The protected M1 gate cannot be edited, but its slash-form coverage targets are interpreted relative to `backend/` and do not reach the required `backend/src/deadbolt/` package.
+**Chose:** Add the tracked `backend/deadbolt` symlink to `src/deadbolt`, preserving one source tree while making the gate's filesystem paths resolve.
+**Rejected:** Duplicating or shimming application modules, changing the protected Makefile, or weakening coverage.
+**Reversal cost:** Low; remove the symlink when the protected gate is human-corrected to use dotted package targets.
