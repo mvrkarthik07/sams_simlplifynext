@@ -45,3 +45,24 @@ immutable `Identity`, `RoleTemplate`, and `Finding` value objects in the engine 
 **Rejected:** Importing provider or graph models into the engine, or modifying frozen contracts.
 **Reversal cost:** Low; a future contract revision can replace the boundary value objects without
 changing the scoring formulas.
+
+## 2026-09-02 — m3 — Keep the plan body deterministic while declaring pre-image slots
+
+**Ambiguity:** The pre-image key contains `plan_hash`, while the hash is defined over the plan body; including the filled key in the body would create a circular derivation.
+**Chose:** Hash the action fields specified by M3, then attach the derived `pre_image_key` to the immutable executor action metadata. T0 and observe-only findings produce no actions; T1 produces a downgrade where possible and T2/T3 produce revocations.
+**Rejected:** Hashing a placeholder and silently changing the body later, or allowing a grant/widening transition.
+**Reversal cost:** Medium; a future schema version can add a separately hashed pre-image metadata section.
+
+## 2026-09-02 — m3 — Preserve snapshot datetime normalization in the canonical encoder
+
+**Ambiguity:** M1 already uses `canonical_dumps` for aware datetime and enum values in snapshot payloads, while M3 adds strict float rejection.
+**Chose:** Retain the established datetime/enum normalization and reject floats recursively with their key paths; `iso_second` remains the explicit strict datetime API for plans.
+**Rejected:** Breaking M1 snapshot serialization or adding a second incompatible canonical encoder.
+**Reversal cost:** Low; a future versioned encoder can narrow accepted input types after snapshot callers migrate.
+
+## 2026-09-02 — m3 — Record the initial deterministic plan golden hash
+
+**Ambiguity:** M3 requires a committed seed hash but does not prescribe the seed fixture’s identity values.
+**Chose:** Use the UTF-8 ordering, T1/T2/T0 seed exercised by `tests/unit/test_m3.py`; record its canonical body hash in `tests/gates/golden/plan_hash_seed_a.txt`.
+**Rejected:** Hashing envelope metadata or depending on UUID values.
+**Reversal cost:** Low; any semantic seed change requires an explicit golden update and decision entry.
