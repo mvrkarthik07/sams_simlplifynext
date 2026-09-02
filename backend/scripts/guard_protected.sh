@@ -16,8 +16,8 @@ PATHS=(
   "scripts/guard_protected.sh"
   "scripts/agent_loop.sh"
   ".github/workflows/ci.yml"
-  "backend/tests/gates"
-  "backend/src/deadbolt/contracts"
+  "tests/gates"
+  "src/deadbolt/contracts"
 )
 
 hash_paths() {

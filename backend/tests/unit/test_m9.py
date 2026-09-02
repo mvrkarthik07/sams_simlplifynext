@@ -10,7 +10,7 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
 @pytest.mark.m9
 def test_cdk_app_and_assertions_are_checked_in() -> None:
     """The cumulative gate must never silently pass without an infra project and tests."""
-    infra = REPOSITORY_ROOT / "infra"
+    infra = REPOSITORY_ROOT / "backend" / "infra"
     assert (infra / "cdk.json").is_file()
     assert (infra / "package-lock.json").is_file()
     assert (infra / "lib" / "deadbolt-stack.ts").is_file()

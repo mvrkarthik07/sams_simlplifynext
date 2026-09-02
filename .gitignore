@@ -1,8 +1,0 @@
-
-# deadbolt agent harness
-.agent/
-backend/.venv/
-backend/.coverage*
-backend/.pytest_cache/
-**/__pycache__/
-artifacts/

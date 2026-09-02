@@ -38,17 +38,16 @@ jobs:
           filters: |
             backend:
               - 'backend/**'
-              - 'Makefile'
-              - 'importlinter.ini'
+              - 'AGENTS.md'
             frontend:
-              - 'frontend/**'
+              - 'Frontend/**'
             infra:
-              - 'infra/**'
+              - 'backend/infra/**'
             protected:
-              - 'Makefile'
-              - '.github/workflows/**'
-              - 'scripts/guard_protected.sh'
-              - 'scripts/agent_loop.sh'
+              - 'backend/Makefile'
+              - 'backend/.github/workflows/**'
+              - 'backend/scripts/guard_protected.sh'
+              - 'backend/scripts/agent_loop.sh'
               - 'backend/tests/gates/**'
               - 'backend/src/deadbolt/contracts/**'
 
@@ -59,7 +58,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Protected-path manifest
-        run: ./scripts/guard_protected.sh
+        run: cd backend && ./scripts/guard_protected.sh
       - name: Human-authorship check on protected changes
         if: needs.changes.outputs.protected == 'true'
         run: |
@@ -84,7 +83,7 @@ jobs:
           cache-dependency-glob: backend/uv.lock
       - run: cd backend && uv python install 3.12 && uv sync --all-extras --dev
       - name: ${{ matrix.check }}
-        run: make ${{ matrix.check }}
+        run: cd backend && make ${{ matrix.check }}
       - name: Upload coverage
         if: matrix.check == 'test'
         uses: actions/upload-artifact@v4
@@ -125,9 +124,9 @@ jobs:
       - uses: astral-sh/setup-uv@v5
       - run: cd backend && uv sync --all-extras --dev
       - name: Export backend schemas
-        run: cd backend && uv run python -m deadbolt.contracts.export --out ../artifacts/schema
+        run: cd backend && uv run python -m deadbolt.contracts.export --out artifacts/schema
       - name: Diff against committed schema snapshot
-        run: git diff --exit-code -- artifacts/schema
+        run: git diff --exit-code -- backend/artifacts/schema
 
   infra:
     needs: changes
@@ -137,11 +136,11 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: { node-version: "20" }
-      - run: cd infra && npm ci && npx cdk synth --quiet
+      - run: cd backend/infra && npm ci && npx cdk synth --quiet
       - name: Cost fence — banned constructs
         run: |
           ! grep -rniE 'NatGateway|OpenSearch|SageMaker.*Endpoint|LoadBalancerV2|\bec2\.Instance\b|DatabaseInstance|ProvisionedThroughput' \
-            infra/lib infra/bin
+            backend/infra/lib backend/infra/bin
 
   ci-ok:
     needs: [guard, backend, frontend, contract, infra]

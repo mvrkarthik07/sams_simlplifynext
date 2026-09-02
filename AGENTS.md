@@ -7,18 +7,18 @@ Milestone prompts add scope; they never override anything here.
 
 ## 0. Non-negotiable boundaries
 
-1. **`frontend/` is read-only.** Never create, edit, delete, or move any file under `frontend/`.
+1. **`Frontend/` is read-only.** Never create, edit, delete, or move any file under `Frontend/`.
    You may read it to learn the API shape the SPA expects. If a backend change would break the
    frontend contract, write the mismatch to `DECISIONS.md` and adapt the *backend*.
 2. **No live AWS calls outside `infra/` and `tests/live/`.** All AWS interaction in unit and
    integration tests goes through `moto`. No `boto3` client is constructed at import time.
    No test may read `AWS_PROFILE`, `~/.aws`, or real credentials.
 3. **Protected paths.** You may not modify:
-   - `Makefile`
-   - `.github/workflows/**`
-   - `scripts/guard_protected.sh`, `scripts/agent_loop.sh`
-   - `tests/gates/**`
-   - `src/deadbolt/contracts/**` after the freeze commit tagged `contract-v1`
+   - `backend/Makefile`
+   - `backend/.github/workflows/**`
+   - `backend/scripts/guard_protected.sh`, `backend/scripts/agent_loop.sh`
+   - `backend/tests/gates/**`
+   - `backend/src/deadbolt/contracts/**` after the freeze commit tagged `contract-v1`
    `scripts/guard_protected.sh` enforces this by SHA-256. If a gate looks wrong, do **not**
    edit it — write the objection to `DECISIONS.md` and solve the problem in application code.
 4. **Never weaken a gate to pass it.** Forbidden: deleting or `xfail`-ing a failing test,
@@ -29,7 +29,7 @@ Milestone prompts add scope; they never override anything here.
 
 ## 0b. Source of truth
 
-`docs/PRD_Deadbolt.pdf` is the product spec. Where this file and the PRD disagree on
+`backend/docs/PRD_Deadbolt.pdf` is the product spec. Where this file and the PRD disagree on
 *engineering* method, this file wins. Where they disagree on *product* behaviour — tiers,
 weights, connector split, demo requirements — the PRD wins and you log the conflict in
 `DECISIONS.md`.
@@ -75,10 +75,10 @@ backend/
     handlers/         # thin Lambda entrypoints; logic lives in the modules above
   tests/
     unit/  integration/  gates/  fixtures/  live/
-frontend/             # READ-ONLY
-infra/                # CDK/SAM. Touch only in M9.
-prompts/              # milestone prompts (input to scripts/agent_loop.sh)
-DECISIONS.md          # append-only decision log
+Frontend/             # READ-ONLY
+backend/infra/        # CDK/SAM. Touch only in M9.
+backend/prompts/      # milestone prompts (input to backend/scripts/agent_loop.sh)
+backend/DECISIONS.md  # append-only decision log
 ```
 
 ---
@@ -147,8 +147,8 @@ The pitch claims byte-identical plans across runs. Everything below is load-bear
 ## 5. Definition of done (applies to every milestone)
 
 ```
-make gate-<milestone>   # exits 0
-make guard              # protected paths unchanged
+cd backend && make gate-<milestone>   # exits 0
+cd backend && make guard              # protected paths unchanged
 ```
 
 Both must pass. `make gate-*` is the sole arbiter of completion — not your own judgement,

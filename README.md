@@ -2,20 +2,21 @@
 
 Deadbolt is a deterministic entitlement-drift detector and reversible remediation broker for
 the joiner–mover–leaver lifecycle. The architecture diagram and data model are maintained in
-the [PRD architecture section](../docs/PRD_Deadbolt.pdf); the runtime path is connector snapshot →
+the [PRD architecture section](PRD_Deadbolt_SaaS_Drift_Access_Negotiator.pdf); the runtime path is connector snapshot →
 DynamoDB/S3 graph → pure drift engine → hashed plan → approval/executor → verified rollback.
 
 ## Reproducible demo
 
-The complete seeded rehearsal is two commands from the repository root and is safe to repeat:
+The complete seeded rehearsal is two commands from `backend/` and is safe to repeat:
 
 ```bash
+cd backend
 make demo-reset
 make demo-run
 ```
 
-`demo-run` executes `backend/tests/e2e/test_full_cycle.py`, prints M1/M2/M3/M5, and writes
-`backend/artifacts/m8-metrics.json`. The scenario contains one mover, one leaver, and 20 planted findings
+`demo-run` executes `tests/e2e/test_full_cycle.py`, prints M1/M2/M3/M5, and writes
+`artifacts/m8-metrics.json`. The scenario contains one mover, one leaver, and 20 planted findings
 across AWS IAM, GitHub, Slack, Notion, Salesforce, and Workday, plus one ratified in-policy
 entitlement that must not be revoked.
 
@@ -51,7 +52,7 @@ cd backend && AWS_DEFAULT_REGION=us-east-1 uv run pytest -q -m live tests/live/t
 1. Confirm the AWS account is the Innovation Sandbox in `us-east-1` and the budget guard is active.
 2. Confirm `DEADBOLT_LIVE_IAM_USER` is a throwaway user with a reversible attached policy.
 3. Confirm `GITHUB_ORG`, `GITHUB_TOKEN`, and one throwaway `owner/repository` are set.
-4. Run `make demo-reset` and then `make demo-run`; show the 20/20 recall and the JSON artifact.
+4. From `backend/`, run `make demo-reset` and then `make demo-run`; show the 20/20 recall and the JSON artifact.
 5. Point to the in-policy GitHub read entitlement and show M2 is exactly zero.
 6. Run the live IAM test with `AWS_DEFAULT_REGION=us-east-1 uv run pytest -q -m live tests/live/test_sandbox_iam.py`.
 7. On stage, run the deterministic test twice at the same `evaluated_at`; show equal `plan_hash`
@@ -82,7 +83,7 @@ show this directory as `Frontend/dist`); if it is absent at synth time, it deplo
 placeholder and can be repopulated after `npm run build`.
 
 ```bash
-cd infra
+cd backend/infra
 npm ci
 npx cdk synth
 npx cdk deploy --all --require-approval never
@@ -94,7 +95,7 @@ parameters. The audit writer's object retention mode remains an application depl
 use `GOVERNANCE` in the sandbox and `COMPLIANCE` in production.
 
 To remove the complete rehearsal stack, including its buckets and retained objects, run this
-single command from `infra/`:
+single command from `backend/infra/`:
 
 ```bash
 npx cdk destroy --all --force
