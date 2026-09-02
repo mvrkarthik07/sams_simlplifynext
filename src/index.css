@@ -1,0 +1,38 @@
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --color-primary: #1E3A5F;
+    --color-on-primary: #FFFFFF;
+    --color-secondary: #334155;
+    --color-accent: #059669;
+    --color-on-accent: #000000;
+    --color-background: #0F172A;
+    --color-foreground: #FFFFFF;
+    --color-card: #192134;
+    --color-card-foreground: #FFFFFF;
+    --color-muted: #10192E;
+    --color-muted-foreground: #94A3B8;
+    --color-border: rgba(255,255,255,0.08);
+    --color-destructive: #DC2626;
+    --color-warning: #F59E0B;
+    --color-ring: #FFFFFF;
+  }
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+  }
+}
+
+/* Reduced motion preference */
+@media (prefers-reduced-motion: reduce) {
+  *, ::before, ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
