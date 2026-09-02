@@ -1,0 +1,162 @@
+# PROTECTED FILE — agents may not modify.
+name: ci
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  # Hard fence: nothing in CI may reach real AWS.
+  AWS_ACCESS_KEY_ID: testing
+  AWS_SECRET_ACCESS_KEY: testing
+  AWS_SESSION_TOKEN: testing
+  AWS_DEFAULT_REGION: us-east-1
+  AWS_EC2_METADATA_DISABLED: "true"
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.f.outputs.backend }}
+      frontend: ${{ steps.f.outputs.frontend }}
+      infra: ${{ steps.f.outputs.infra }}
+      protected: ${{ steps.f.outputs.protected }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: f
+        with:
+          filters: |
+            backend:
+              - 'backend/**'
+              - 'Makefile'
+              - 'importlinter.ini'
+            frontend:
+              - 'frontend/**'
+            infra:
+              - 'infra/**'
+            protected:
+              - 'Makefile'
+              - '.github/workflows/**'
+              - 'scripts/guard_protected.sh'
+              - 'scripts/agent_loop.sh'
+              - 'backend/tests/gates/**'
+              - 'backend/src/deadbolt/contracts/**'
+
+  # Isolation job 1: did an agent touch something it must not?
+  guard:
+    needs: changes
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Protected-path manifest
+        run: ./scripts/guard_protected.sh
+      - name: Human-authorship check on protected changes
+        if: needs.changes.outputs.protected == 'true'
+        run: |
+          echo "::error::Protected paths changed. Requires a human commit with"
+          echo "::error::trailer 'Protected-Change-Approved-By: <name>'."
+          git log -1 --pretty=%B | grep -q '^Protected-Change-Approved-By:' \
+            || exit 1
+
+  backend:
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        check: [lint, types, arch, test, determinism]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+      - run: cd backend && uv python install 3.12 && uv sync --all-extras --dev
+      - name: ${{ matrix.check }}
+        run: make ${{ matrix.check }}
+      - name: Upload coverage
+        if: matrix.check == 'test'
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-coverage
+          path: backend/.coverage*
+          if-no-files-found: ignore
+
+  frontend:
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        check: [lint, typecheck, build]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: cd frontend && npm ci --no-audit --no-fund
+      - run: cd frontend && npm run ${{ matrix.check }}
+
+  # Contract compatibility: the SPA's expected response shapes vs. the backend's
+  # OpenAPI/JSON-schema export. Runs when EITHER side moves, so drift surfaces on
+  # the commit that caused it rather than at integration time.
+  contract:
+    needs: [changes, backend]
+    if: |
+      always() &&
+      (needs.changes.outputs.backend == 'true' || needs.changes.outputs.frontend == 'true')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: cd backend && uv sync --all-extras --dev
+      - name: Export backend schemas
+        run: cd backend && uv run python -m deadbolt.contracts.export --out ../artifacts/schema
+      - name: Diff against committed schema snapshot
+        run: git diff --exit-code -- artifacts/schema
+
+  infra:
+    needs: changes
+    if: needs.changes.outputs.infra == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "20" }
+      - run: cd infra && npm ci && npx cdk synth --quiet
+      - name: Cost fence — banned constructs
+        run: |
+          ! grep -rniE 'NatGateway|OpenSearch|SageMaker.*Endpoint|LoadBalancerV2|\bec2\.Instance\b|DatabaseInstance|ProvisionedThroughput' \
+            infra/lib infra/bin
+
+  ci-ok:
+    needs: [guard, backend, frontend, contract, infra]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fail if any required job failed
+        run: |
+          echo '${{ toJSON(needs) }}' > needs.json
+          python3 - <<'PY'
+          import json
+          needs = json.load(open("needs.json"))
+          bad = {k: v["result"] for k, v in needs.items()
+                 if v["result"] not in ("success", "skipped")}
+          if bad:
+              print("FAILED:", bad); raise SystemExit(1)
+          print("all required checks green:", {k: v["result"] for k, v in needs.items()})
+          PY
