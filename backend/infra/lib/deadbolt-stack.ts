@@ -159,7 +159,7 @@ export class DeadboltStack extends Stack {
   }
 
   private deploySpa(bucket: s3.Bucket): void {
-    const repoRoot = path.resolve(__dirname, '../..');
+    const repoRoot = path.resolve(__dirname, '../../..');
     const candidates = [path.join(repoRoot, 'frontend', 'dist'), path.join(repoRoot, 'Frontend', 'dist')];
     const buildOutput = candidates.find((candidate) => fs.existsSync(candidate));
     const source = buildOutput
@@ -173,14 +173,25 @@ export class DeadboltStack extends Stack {
   }
 
   private function(id: string, name: string, handler: string): lambda.Function {
-    const backend = path.resolve(__dirname, '../../backend');
+    const backend = path.resolve(__dirname, '../..');
     return new lambda.Function(this, id, {
       functionName: `deadbolt-${name}`,
       runtime: lambda.Runtime.PYTHON_3_12,
       architecture: lambda.Architecture.ARM_64,
       memorySize: 512,
       timeout: Duration.seconds(30),
-      code: lambda.Code.fromAsset(backend),
+      code: lambda.Code.fromAsset(backend, {
+        exclude: [
+          'infra',
+          'infra/**',
+          '.venv',
+          '.venv/**',
+          '.pytest_cache',
+          '.pytest_cache/**',
+          'artifacts',
+          'artifacts/**',
+        ],
+      }),
       handler,
       environment: { PYTHONPATH: 'src' },
       logGroup: new logs.LogGroup(this, `${id}LogGroup`, {

@@ -2,20 +2,20 @@
 
 Deadbolt is a deterministic entitlement-drift detector and reversible remediation broker for
 the joiner–mover–leaver lifecycle. The architecture diagram and data model are maintained in
-the [PRD architecture section](docs/PRD_Deadbolt.pdf); the runtime path is connector snapshot →
+the [PRD architecture section](../docs/PRD_Deadbolt.pdf); the runtime path is connector snapshot →
 DynamoDB/S3 graph → pure drift engine → hashed plan → approval/executor → verified rollback.
 
 ## Reproducible demo
 
-The complete seeded rehearsal is two commands and is safe to repeat:
+The complete seeded rehearsal is two commands from the repository root and is safe to repeat:
 
 ```bash
 make demo-reset
 make demo-run
 ```
 
-`demo-run` executes `tests/e2e/test_full_cycle.py`, prints M1/M2/M3/M5, and writes
-`artifacts/m8-metrics.json`. The scenario contains one mover, one leaver, and 20 planted findings
+`demo-run` executes `backend/tests/e2e/test_full_cycle.py`, prints M1/M2/M3/M5, and writes
+`backend/artifacts/m8-metrics.json`. The scenario contains one mover, one leaver, and 20 planted findings
 across AWS IAM, GitHub, Slack, Notion, Salesforce, and Workday, plus one ratified in-policy
 entitlement that must not be revoked.
 

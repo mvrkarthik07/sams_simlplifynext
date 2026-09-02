@@ -9,7 +9,7 @@ from datetime import datetime
 from pathlib import Path
 
 _ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(_ROOT / "backend" / "src"))
+sys.path.insert(0, str(_ROOT / "src"))
 
 from deadbolt.metrics import calculate_metrics, metrics_table, write_metrics  # noqa: E402
 

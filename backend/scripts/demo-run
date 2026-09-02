@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+backend_root="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$backend_root"
+uv run pytest -q -m e2e -s
