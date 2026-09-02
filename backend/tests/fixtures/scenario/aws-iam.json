@@ -1,0 +1,8 @@
+{
+  "entitlements": [
+    {"identity_id":"priya@example.com","resource":"staging-admin","scope":"admin","granted_at":"2025-01-01T00:00:00Z","last_used_at":"2025-04-01T00:00:00Z","credential_type":"federated","revocable":true,"raw":{"kind":"policy","policy_name":"staging-admin"}},
+    {"identity_id":"leaver@example.com","resource":"prod-readonly","scope":"write","granted_at":"2024-01-01T00:00:00Z","last_used_at":"2025-01-01T00:00:00Z","credential_type":"federated","revocable":true,"raw":{"kind":"policy","policy_name":"prod-readonly"}},
+    {"identity_id":"priya@example.com","resource":"deploy-policy","scope":"write","granted_at":"2025-01-01T00:00:00Z","last_used_at":"2025-04-01T00:00:00Z","credential_type":"federated","revocable":true,"raw":{"kind":"policy","policy_name":"deploy-policy"}},
+    {"identity_id":"leaver@example.com","resource":"breakglass-policy","scope":"admin","granted_at":"2024-01-01T00:00:00Z","last_used_at":"2025-01-01T00:00:00Z","credential_type":"api-key","revocable":true,"raw":{"kind":"policy","policy_name":"breakglass-policy"}}
+  ]
+}

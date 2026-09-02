@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+artifact="$(dirname "$0")/../artifacts/m8-metrics.json"
+if [[ -f "$artifact" ]]; then
+  rm -f "$artifact"
+fi
+echo "demo reset: fixture providers will be recreated on the next run"

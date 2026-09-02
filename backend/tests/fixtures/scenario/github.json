@@ -1,0 +1,9 @@
+{
+  "entitlements": [
+    {"identity_id":"priya@example.com","resource":"acme/payments","scope":"admin","granted_at":"2025-01-01T00:00:00Z","last_used_at":"2025-04-01T00:00:00Z","credential_type":"federated","revocable":true,"raw":{"kind":"collaborator","owner":"acme","repo":"payments","login":"priya@example.com","permission":"admin"}},
+    {"identity_id":"leaver@example.com","resource":"acme/legacy","scope":"write","granted_at":"2024-01-01T00:00:00Z","last_used_at":"2025-01-01T00:00:00Z","credential_type":"federated","revocable":true,"raw":{"kind":"collaborator","owner":"acme","repo":"legacy","login":"leaver@example.com","permission":"push"}},
+    {"identity_id":"priya@example.com","resource":"acme/infra","scope":"write","granted_at":"2025-01-01T00:00:00Z","last_used_at":"2025-04-01T00:00:00Z","credential_type":"federated","revocable":true,"raw":{"kind":"collaborator","owner":"acme","repo":"infra","login":"priya@example.com","permission":"push"}},
+    {"identity_id":"leaver@example.com","resource":"acme/security","scope":"admin","granted_at":"2024-01-01T00:00:00Z","last_used_at":"2025-01-01T00:00:00Z","credential_type":"federated","revocable":true,"raw":{"kind":"collaborator","owner":"acme","repo":"security","login":"leaver@example.com","permission":"admin"}},
+    {"identity_id":"priya@example.com","resource":"acme/platform","scope":"read","granted_at":"2026-01-01T00:00:00Z","last_used_at":"2026-09-02T00:00:00Z","credential_type":"federated","revocable":true,"raw":{"kind":"collaborator","owner":"acme","repo":"platform","login":"priya@example.com","permission":"pull"}}
+  ]
+}

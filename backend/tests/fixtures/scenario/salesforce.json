@@ -1,0 +1,7 @@
+{
+  "entitlements": [
+    {"identity_id":"priya@example.com","resource":"customer-pii","scope":"admin","granted_at":"2025-01-01T00:00:00Z","last_used_at":"2025-04-01T00:00:00Z","credential_type":"federated","revocable":true,"raw":{"object":"CustomerPII","field_level":true}},
+    {"identity_id":"leaver@example.com","resource":"opportunity","scope":"write","granted_at":"2024-01-01T00:00:00Z","last_used_at":"2025-01-01T00:00:00Z","credential_type":"federated","revocable":true,"raw":{"object":"Opportunity","field_level":true}},
+    {"identity_id":"leaver@example.com","resource":"billing","scope":"admin","granted_at":"2024-01-01T00:00:00Z","last_used_at":"2025-01-01T00:00:00Z","credential_type":"federated","revocable":true,"raw":{"object":"Billing","field_level":true}}
+  ]
+}

@@ -125,3 +125,36 @@ helper for the later infrastructure adapter.
 `infra/` before M9.
 **Reversal cost:** Low; M9 only needs to pass the deployment config and invoke the retention
 helper.
+
+## 2026-09-03 — m8 — Keep the default seeded rehearsal credential-free
+
+**Ambiguity:** M8 asks the scenario to seed real IAM/GitHub entities, while the standing
+contract forbids live AWS interaction outside `infra/` and `tests/live/` and the gate must run
+without credentials.
+**Chose:** Use protocol-identical local seeds for the reproducible e2e and expose the real
+provider path only through the existing explicit live rehearsal; document the throwaway IAM user
+and GitHub repository checklist separately.
+**Rejected:** Implicitly calling AWS or GitHub from `make demo-run`, which would make repeated
+rehearsals destructive and non-deterministic.
+**Reversal cost:** Low; deployment configuration can select the Tier A providers without an
+engine or plan change.
+
+## 2026-09-03 — m8 — Add demo targets through GNUmakefile inclusion
+
+**Ambiguity:** M8 requires `make demo-reset` and `make demo-run`, but the protected Makefile
+cannot be edited.
+**Chose:** Add a small `GNUmakefile` that includes the protected Makefile and defines only the
+two demo targets, preserving all protected bytes and cumulative gate behavior.
+**Rejected:** Editing or duplicating the protected Makefile, or requiring a non-obvious `-f`
+flag for the on-stage command.
+**Reversal cost:** Low; remove the inclusion shim after a human-approved Makefile revision.
+
+## 2026-09-03 — m8 — Allocate rollback audit sequence numbers after forward actions
+
+**Ambiguity:** Forward and rollback events share a plan audit chain, but rollback originally
+reused each forward action sequence and made multi-action chains unverifiable.
+**Chose:** Let the append-only audit writer allocate the next sequence for rollback records.
+**Rejected:** Splitting each rollback into a separate chain or accepting duplicate sequence
+numbers that invalidate chain verification.
+**Reversal cost:** Low; the event schema remains unchanged and only sequence allocation moves to
+the writer boundary.

@@ -94,7 +94,6 @@ class RollbackExecutor:
                 "status": status,
                 "plan_id": action.plan_id,
                 "plan_hash": action.plan_hash,
-                "seq": action.seq,
                 "trace_id": action.trace_id,
                 "system": action.system,
                 "resource": action.resource,

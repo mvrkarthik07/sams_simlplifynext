@@ -1,0 +1,28 @@
+{
+  "name": "priya-mover-leaver-v1",
+  "expected_findings": [
+    {"identity_id": "priya@example.com", "system": "aws-iam", "resource": "staging-admin", "scope": "admin"},
+    {"identity_id": "leaver@example.com", "system": "aws-iam", "resource": "prod-readonly", "scope": "write"},
+    {"identity_id": "priya@example.com", "system": "aws-iam", "resource": "deploy-policy", "scope": "write"},
+    {"identity_id": "leaver@example.com", "system": "aws-iam", "resource": "breakglass-policy", "scope": "admin"},
+    {"identity_id": "priya@example.com", "system": "github", "resource": "acme/payments", "scope": "admin"},
+    {"identity_id": "leaver@example.com", "system": "github", "resource": "acme/legacy", "scope": "write"},
+    {"identity_id": "priya@example.com", "system": "github", "resource": "acme/infra", "scope": "write"},
+    {"identity_id": "leaver@example.com", "system": "github", "resource": "acme/security", "scope": "admin"},
+    {"identity_id": "priya@example.com", "system": "slack", "resource": "workspace", "scope": "admin"},
+    {"identity_id": "leaver@example.com", "system": "slack", "resource": "incident-channel", "scope": "write"},
+    {"identity_id": "leaver@example.com", "system": "slack", "resource": "finance-channel", "scope": "admin"},
+    {"identity_id": "priya@example.com", "system": "notion", "resource": "company-wiki", "scope": "admin"},
+    {"identity_id": "leaver@example.com", "system": "notion", "resource": "roadmap", "scope": "write"},
+    {"identity_id": "leaver@example.com", "system": "notion", "resource": "people", "scope": "admin"},
+    {"identity_id": "priya@example.com", "system": "salesforce", "resource": "customer-pii", "scope": "admin"},
+    {"identity_id": "leaver@example.com", "system": "salesforce", "resource": "opportunity", "scope": "write"},
+    {"identity_id": "leaver@example.com", "system": "salesforce", "resource": "billing", "scope": "admin"},
+    {"identity_id": "priya@example.com", "system": "workday", "resource": "payroll", "scope": "admin"},
+    {"identity_id": "leaver@example.com", "system": "workday", "resource": "employees", "scope": "write"},
+    {"identity_id": "leaver@example.com", "system": "workday", "resource": "compensation", "scope": "admin"}
+  ],
+  "ratified_template_entitlements": [
+    {"identity_id": "priya@example.com", "system": "github", "resource": "acme/platform", "scope": "read"}
+  ]
+}
