@@ -79,3 +79,16 @@ fields and the original provider result serialized canonically for duplicate del
 adding a runtime queue/database dependency for audit delivery.
 **Reversal cost:** Medium; a future contract revision can add a point-read API and replace the
 snapshot resolver while retaining the lock, pre-image, and rollback records.
+## 2026-09-03 — m5 — Keep offline provider rehearsals safe by default
+
+**Ambiguity:** The standalone CLI needs a useful dry-run path without assuming AWS or GitHub credentials, while the Tier-A providers must remain real when explicitly selected.
+**Chose:** Default CLI commands to the existing Salesforce and Workday fixture providers; select `aws-iam` or `github` explicitly for live reads, and make `--dry-run` the documented rehearsal path.
+**Rejected:** Constructing live clients or making network calls for an unspecified CLI command.
+**Reversal cost:** Low; a deployment configuration can select real providers without changing the engine or provider contract.
+
+## 2026-09-03 — m5 — Treat unavailable Access Advisor test doubles as unknown usage
+
+**Ambiguity:** The installed moto IAM backend does not implement Access Advisor, although the production connector must use its asynchronous result as the genuine last-used source.
+**Chose:** Catch only the test-double `NotImplementedError`, cache an empty advisor result, and map usage to `None`; real AWS errors remain provider failures and no timestamp is fabricated.
+**Rejected:** Removing Access Advisor, inventing timestamps, or bypassing the asynchronous poll in production.
+**Reversal cost:** Low; when moto adds the surface, the fallback becomes unused and the existing polling tests continue to validate the real path.
