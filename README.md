@@ -71,3 +71,31 @@ period (the default is one day for the low-cost rehearsal).
 Lambda functions use the AWS Distro for OpenTelemetry (ADOT) Lambda layer. Configure its OTLP
 collector endpoint with `OTEL_EXPORTER_OTLP_ENDPOINT`; the default local collector endpoint is
 `http://localhost:4318`. CloudWatch log groups use a one-day retention policy.
+
+## Deploying the AWS packaging
+
+M9 provisions the low-cost `us-east-1` stack: the on-demand graph table, Object-Lock snapshot,
+pre-image, and audit buckets, ARM64 Lambdas, the Standard approval broker, hourly snapshots,
+HR-event refresh, SecureString connector parameters, and the static SPA bucket. The CDK app
+uses the Vite build output at `frontend/dist` (the repository's case-insensitive checkout may
+show this directory as `Frontend/dist`); if it is absent at synth time, it deploys a harmless
+placeholder and can be repopulated after `npm run build`.
+
+```bash
+cd infra
+npm ci
+npx cdk synth
+npx cdk deploy --all --require-approval never
+```
+
+Set each `/deadbolt/connectors/*/credential` SSM SecureString to the real connector credential
+after deployment. Do not put credentials in `cdk.json`, source control, or CloudFormation
+parameters. The audit writer's object retention mode remains an application deployment setting:
+use `GOVERNANCE` in the sandbox and `COMPLIANCE` in production.
+
+To remove the complete rehearsal stack, including its buckets and retained objects, run this
+single command from `infra/`:
+
+```bash
+npx cdk destroy --all --force
+```

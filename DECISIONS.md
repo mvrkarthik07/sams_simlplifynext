@@ -158,3 +158,24 @@ reused each forward action sequence and made multi-action chains unverifiable.
 numbers that invalidate chain verification.
 **Reversal cost:** Low; the event schema remains unchanged and only sequence allocation moves to
 the writer boundary.
+
+## 2026-09-03 — m9 — Pin and self-contain the CDK packaging toolchain
+
+**Ambiguity:** The protected gate invokes `npx cdk synth` without first installing infrastructure dependencies, and the existing `infra/` directory had no CDK app.
+**Chose:** Add a pinned local AWS CDK v2 TypeScript app and lockfile, with the deployment runbook installing dependencies before deploy; the current workspace installs the lockfile before the gate.
+**Rejected:** Changing the protected Makefile or relying on an interactive `npx` package download.
+**Reversal cost:** Low; update the pinned CDK dependencies in one infrastructure-only change.
+
+## 2026-09-03 — m9 — Use a synth-safe SPA source fallback
+
+**Ambiguity:** The protected cumulative gate does not run the frontend build, while the SPA build output is intentionally ignored and the frontend directory is read-only.
+**Chose:** Deploy `frontend/dist` when present and a tiny placeholder only when it is absent at synth time; the normal deploy runbook builds the SPA before synthesis when a live UI is required.
+**Rejected:** Creating or modifying files under the read-only frontend directory, or making `cdk synth` depend on an untracked build artifact.
+**Reversal cost:** Low; remove the fallback once CI guarantees a frontend build artifact.
+
+## 2026-09-03 — m9 — Install infrastructure dependencies before the cumulative gate
+
+**Ambiguity:** The protected `gate-m9` recipe must remain byte-identical, but its direct `npx cdk synth` invocation cannot install a missing local CLI non-interactively.
+**Chose:** Add `infra-install` as a prerequisite in the existing unprotected `GNUmakefile` shim; it runs `npm ci` from the committed lockfile before the protected recipe.
+**Rejected:** Committing `node_modules`, changing the protected Makefile, or relying on an interactive package download.
+**Reversal cost:** Low; remove the prerequisite when CI owns the infrastructure install step.

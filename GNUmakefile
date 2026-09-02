@@ -3,6 +3,14 @@ include Makefile
 
 .PHONY: demo-reset demo-run
 
+.PHONY: infra-install
+infra-install:
+	cd infra && npm ci --no-audit --no-fund
+
+# The protected gate invokes npx directly; install the pinned local CLI first so a clean
+# checkout never falls through to an interactive package download.
+gate-m9: infra-install
+
 demo-reset:
 	./scripts/demo-reset
 
