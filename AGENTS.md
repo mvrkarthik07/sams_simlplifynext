@@ -153,3 +153,209 @@ cd backend && make guard              # protected paths unchanged
 
 Both must pass. `make gate-*` is the sole arbiter of completion — not your own judgement,
 not a summary of what you did.
+
+---
+
+## 6. Current repository handoff — 2026-09-04
+
+This section is the current source-of-truth handoff for the next agent. Read it before changing
+the repository; it records what is implemented, what is verified, and what is deliberately not
+claimed.
+
+### 6.1 Repository layout and history
+
+The repository root is `/Users/karthik/sams_simlplifynext` locally and the GitHub remote is
+`https://github.com/mvrkarthik07/sams_simlplifynext.git`.
+
+```text
+AGENTS.md
+README.md
+PRD_Deadbolt_SaaS_Drift_Access_Negotiator.pdf
+frontend/                 # inherited SPA; source is read-only by default
+backend/                  # Python application, tests, infra, scripts, docs, prompts
+  .github/workflows/ci.yml
+  Makefile                # protected
+  GNUmakefile             # unprotected extension shim
+  src/deadbolt/
+  tests/
+  infra/
+```
+
+The case-only `Frontend/` → `frontend/` rename was owner-approved and committed in
+`41628cb`. All repository path linkages were updated, including Makefiles, CI filters, build
+commands, CDK asset lookup, prompts, runbooks, AGENTS documentation, and contract artifacts.
+The protected manifest was re-blessed with the trailer
+`Protected-Change-Approved-By: Karthik`.
+
+The current `main` includes:
+
+- `ee80219` — m5b connector expansion
+- `e1f9100` — protected frontend-path decision record
+- `41628cb` — lowercase frontend rename and CI typecheck script
+
+The normal rule remains: future agents must not commit directly to `main` or modify protected
+files without explicit owner approval and the required approval trailer. The current rename was
+an explicit owner-approved exception.
+
+### 6.2 Backend implementation status
+
+The completed milestones are M0 through M9, plus m5b. The backend is deterministic, fixture-safe,
+and uses the frozen `EntitlementProvider` contract in `src/deadbolt/contracts/`.
+
+Important implementation areas:
+
+- `engine/` — pure integer basis-point scoring, drift detection, tier selection, no I/O or
+  implicit clock reads.
+- `plan/` — canonical plan hashing, stable action ordering, distinct `plan_id`, and a guard that
+  prevents entitlements marked `raw["reversible"] == false` from being scheduled at T1.
+- `executor/` and `audit/` — idempotent execution, pre-images, rollback, audit records, hash
+  chains, and OpenTelemetry helpers.
+- `providers/aws_iam.py`, `github.py`, `slack.py`, and `notion.py` — existing Tier-A provider
+  paths.
+- `providers/github_enterprise.py` — Cloud/Server API-base abstraction, capability probing,
+  PAT/SAML credential authorization/deploy-key surfaces, pagination, rate-limit handling, and
+  irreversible PAT/SAML capability marking.
+- `providers/salesforce.py` — pinned v61.0 REST/SOQL path, JWT bearer authentication, permission
+  set assignments, object permissions, field permissions, and LoginHistory. Permission-set
+  assignment delete/recreate is reversible; OAuth grants and shared permission sets are not
+  mutated.
+- `providers/workday.py` — real-shaped worker REST/RaaS and SOAP security-group reads plus
+  normalized hire/job-change/termination events. Workday access is intentionally read-only.
+- `graph/identity.py` — explicit SCIM → SAML → verified email → configured alias precedence;
+  unresolved or ambiguous accounts are quarantined. Display-name similarity and fuzzy matching
+  are forbidden.
+- `providers/registry.py` — fixture/real selection is configuration-driven; adding a provider
+  must not create engine coupling.
+
+Credential reality at the last check:
+
+| System | Current status | Tier decision |
+|---|---|---|
+| GitHub Enterprise Cloud/Server | No enterprise PAT, org, or Server base URL available | Tier B with real-shaped replay tests |
+| Salesforce | No Connected App client ID, username, private key, or access token available | JWT/SOQL path implemented; Tier B until authenticated rehearsal |
+| Workday | No tenant or credentials; no free sandbox | Tier B, read-only real-shaped path |
+
+Do not claim a live Salesforce, GHE, or Workday integration until credentials are actually
+authenticated. Do not implement Salesforce username/password authentication.
+
+### 6.3 Frontend status and backend liaison
+
+The SPA lives under `frontend/`. Its source components and state/routing/styling remain inherited.
+The only frontend code change made during the rename was adding the missing package script:
+
+```json
+"typecheck": "tsc -b"
+```
+
+The SPA's `frontend/src/lib/api.ts` is still an in-memory mock. It exports these operations:
+`getFindings`, `getFinding`, `getPlan`, `getAuditLog`, `getMetrics`, `decideApproval`,
+`rerunDriftEngine`, and `executeRollback`. It makes no `fetch`, Axios, WebSocket, SSE, or polling
+requests and has no API base-URL environment variable.
+
+Therefore the following are true:
+
+- Filesystem/build linkages between `frontend/` and `backend/` are correct and verified.
+- The frontend can be linted, typechecked, and built successfully.
+- The SPA is **not** yet proven to drive the backend over HTTP.
+- A real browser → backend → provider end-to-end flow has **not** been completed.
+- Do not replace the frontend mock or edit components merely to make an integration test pass.
+  The integration blocker is recorded in `backend/artifacts/contract-gaps.md` and
+  `backend/DECISIONS.md` as `## BLOCKED: integration`. Any future exception must be limited to
+  the API client/types, be separately reviewed, and cite the PRD reason.
+
+The static contract evidence is in:
+
+- `backend/artifacts/contract-inventory.json` — zero frontend network calls; eight in-memory
+  client operations.
+- `backend/artifacts/contract-gaps.md` — three currently unused exported domain schemas and the
+  explicit transport blocker.
+
+### 6.4 Test and verification commands
+
+Backend setup and cumulative verification:
+
+```bash
+cd backend
+uv sync --all-extras --dev
+make verify
+./scripts/guard_protected.sh
+```
+
+m5b-specific gate:
+
+```bash
+cd backend
+make gate-m5b
+```
+
+This gate currently passes m5b connector tests, rollback/determinism tests, the cumulative
+backend verification, strict mypy, import architecture, non-live tests, coverage ≥85%, and the
+protected-path guard. The last recorded result was 100 non-live tests passing at 85.15% coverage.
+
+Frontend CI-equivalent commands:
+
+```bash
+cd frontend
+npm ci --no-audit --no-fund
+npm run lint
+npm run typecheck
+npm run build
+```
+
+Infrastructure and contract checks:
+
+```bash
+cd backend
+uv run python -m deadbolt.contracts.export --out artifacts/schema
+cd infra
+npm ci --no-audit --no-fund
+npx cdk synth --quiet
+! grep -rniE 'NatGateway|OpenSearch|SageMaker.*Endpoint|LoadBalancerV2|\bec2\.Instance\b|DatabaseInstance|ProvisionedThroughput' lib bin
+```
+
+The checked-in workflow is `backend/.github/workflows/ci.yml`. Because the workflow is nested
+under `backend/`, GitHub's native workflow discovery may require a human to move it to the root
+`.github/workflows/` directory and re-bless the protected path; do not silently relocate or edit
+it without owner approval.
+
+### 6.5 Live AWS rehearsal
+
+The safe live test is restricted to a throwaway IAM user and explicitly marked `live`. Configure
+standard AWS credentials through the normal AWS SDK chain, use `us-east-1`, and set only the
+throwaway target name:
+
+```bash
+cd backend
+export AWS_DEFAULT_REGION=us-east-1
+export DEADBOLT_LIVE_IAM_USER=<throwaway-iam-user>
+aws sts get-caller-identity --region us-east-1
+uv run pytest -q -m live tests/live/test_sandbox_iam.py
+```
+
+The test snapshots the target, revokes one attached or inline policy, and restores it. Never use
+an employee, production, or otherwise non-throwaway identity. `make demo-run` remains entirely
+fixture-backed and does not touch AWS.
+
+The live-demo README checklist also expects `GITHUB_ORG`, `GITHUB_TOKEN`, and a throwaway
+repository for the existing GitHub provider. GHE, Salesforce, and Workday remain unavailable
+until their credential reality checks are repeated and successful.
+
+### 6.6 Protected files and generated files
+
+The protected set is enforced by `backend/scripts/guard_protected.sh` and currently includes:
+
+- `backend/Makefile`
+- `backend/.github/workflows/ci.yml`
+- `backend/scripts/guard_protected.sh`
+- `backend/scripts/agent_loop.sh`
+- `backend/tests/gates/**`
+- `backend/src/deadbolt/contracts/**`
+
+`backend/DECISIONS.md` is append-only. `backend/artifacts/` is mostly runtime output; the
+contract inventory, contract gaps, CI artifact, and Makefile integration note are intentionally
+tracked. `frontend/node_modules/`, `frontend/dist/`, Python caches, coverage files, and other
+build output are generated/ignored and must not be committed.
+
+When a future agent starts, first run `git status --short`, confirm the branch, read this section,
+read `backend/DECISIONS.md`, and run the smallest relevant gate before editing. If a requirement
+conflicts with this handoff or the PRD, record the decision before implementation.
