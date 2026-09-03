@@ -1,9 +1,9 @@
-# Frontend/backend contract gaps
+# frontend/backend contract gaps
 
-Inventory source: `Frontend/src` static search, 2026-09-04.
+Inventory source: `frontend/src` static search, 2026-09-04.
 
 The inherited SPA makes zero HTTP calls. Its eight exported API operations are backed by an
-in-memory database in `Frontend/src/lib/api.ts`; therefore there is no frontend HTTP row that a
+in-memory database in `frontend/src/lib/api.ts`; therefore there is no frontend HTTP row that a
 backend route can satisfy. The backend schema export currently contains `ActionResult`,
 `Entitlement`, and `FixedClock`, and those schemas are UNUSED by the SPA.
 
@@ -16,7 +16,7 @@ backend route can satisfy. The backend schema export currently contains `ActionR
 ## BLOCKED: integration
 
 The integration objective requires the SPA to drive a real HTTP backend, but the standing
-contract in `AGENTS.md` §0.1 makes `Frontend/` read-only and the integration adaptation rule
+contract in `AGENTS.md` §0.1 makes `frontend/` read-only and the integration adaptation rule
 only permits frontend API-client edits when the frontend requests PRD-forbidden behavior. The
 frontend requests no forbidden behavior; it simply has no transport layer. A backend-only change
 cannot turn an in-memory module into browser network traffic. Per the integration instructions,

@@ -100,7 +100,7 @@ class Plan:
 
     @property
     def hash(self) -> str:
-        """Frontend-friendly alias for the canonical plan hash."""
+        """frontend-friendly alias for the canonical plan hash."""
         return self.plan_hash
 
     @property

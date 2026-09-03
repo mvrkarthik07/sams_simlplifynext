@@ -40,7 +40,7 @@ jobs:
               - 'backend/**'
               - 'AGENTS.md'
             frontend:
-              - 'Frontend/**'
+              - 'frontend/**'
             infra:
               - 'backend/infra/**'
             protected:

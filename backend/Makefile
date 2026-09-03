@@ -37,7 +37,7 @@ guard:
 	./scripts/guard_protected.sh
 
 fe-build:
-	cd ../Frontend && npm ci --no-audit --no-fund && npm run build
+	cd ../frontend && npm ci --no-audit --no-fund && npm run build
 
 # ---------------------------------------------------------------------------
 # Preflight: workspace shape and toolchain, before a single line of Python.
@@ -47,13 +47,13 @@ preflight gate-preflight:
 	@command -v uv   >/dev/null || { echo "MISSING: uv (https://docs.astral.sh/uv/)"; exit 1; }
 	@command -v git  >/dev/null || { echo "MISSING: git"; exit 1; }
 	@command -v node >/dev/null || { echo "MISSING: node 20 (needed for frontend + CDK)"; exit 1; }
-	@test -d ../Frontend || { echo "MISSING: frontend/ — wrong repo root"; exit 1; }
+	@test -d ../frontend || { echo "MISSING: frontend/ — wrong repo root"; exit 1; }
 	@test -d prompts  || { echo "MISSING: prompts/"; exit 1; }
 	@test -f ../AGENTS.md || { echo "MISSING: AGENTS.md"; exit 1; }
 	@test -f DECISIONS.md || { echo "MISSING: DECISIONS.md"; exit 1; }
 	@test -f docs/PRD_Deadbolt.pdf || { echo "MISSING: docs/PRD_Deadbolt.pdf"; exit 1; }
-	@git diff --quiet -- ../Frontend || { echo "VIOLATION: frontend/ has uncommitted edits"; exit 1; }
-	@test -z "$$(git status --porcelain -- ../Frontend)" || { echo "VIOLATION: frontend/ dirty"; exit 1; }
+	@git diff --quiet -- ../frontend || { echo "VIOLATION: frontend/ has uncommitted edits"; exit 1; }
+	@test -z "$$(git status --porcelain -- ../frontend)" || { echo "VIOLATION: frontend/ dirty"; exit 1; }
 	@./scripts/guard_protected.sh
 	@echo "preflight: ok"
 

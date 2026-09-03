@@ -101,4 +101,4 @@ If `m8` slips, you have no metrics to cite on stage — protect it ahead of `m6`
 | Agent invents a passing implementation | Gate green, behaviour wrong | Property tests and golden hashes in `tests/gates/`, which are protected |
 | Coverage gamed by trivial tests | High coverage, low assertion density | `m2`/`m3` gates require property tests by name; review `git log -p` on the branch each morning |
 | Cost drift on AWS | Silent spend | Budget guard is `m8` item 5, but build it on day 1 if you touch AWS earlier |
-| Frontend regression | SPA breaks on a backend merge | `contract` CI job diffs the exported JSON Schema against the committed snapshot |
+| frontend regression | SPA breaks on a backend merge | `contract` CI job diffs the exported JSON Schema against the committed snapshot |

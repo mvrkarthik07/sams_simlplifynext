@@ -160,7 +160,7 @@ export class DeadboltStack extends Stack {
 
   private deploySpa(bucket: s3.Bucket): void {
     const repoRoot = path.resolve(__dirname, '../../..');
-    const candidates = [path.join(repoRoot, 'frontend', 'dist'), path.join(repoRoot, 'Frontend', 'dist')];
+    const candidates = [path.join(repoRoot, 'frontend', 'dist'), path.join(repoRoot, 'frontend', 'dist')];
     const buildOutput = candidates.find((candidate) => fs.existsSync(candidate));
     const source = buildOutput
       ? s3deploy.Source.asset(buildOutput)

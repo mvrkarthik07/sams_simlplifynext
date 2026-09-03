@@ -44,7 +44,7 @@ is milestone m0, which runs next.
 
 4. Read `frontend/` — specifically its `package.json` scripts and any `src/api`, `src/lib/api`,
    `src/types`, or equivalent — and write **one** `DECISIONS.md` entry titled
-   `Frontend API surface observed` listing every endpoint path, HTTP verb, and response shape the
+   `frontend API surface observed` listing every endpoint path, HTTP verb, and response shape the
    SPA already expects. This is the contract m0's `contracts/export.py` must satisfy. If the
    frontend calls nothing yet, say so explicitly; do not invent endpoints.
 5. Confirm `frontend/` is byte-identical to what you inherited: `git status --porcelain -- frontend`

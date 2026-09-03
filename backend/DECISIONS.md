@@ -11,7 +11,7 @@ dependency added, or blocker hit.
 `git --version`: `git version 2.50.1 (Apple Git-155)`.
 `aws --version`: AWS CLI is not installed in this environment; no live AWS calls are needed for preflight.
 
-## 2026-09-02 — preflight — Frontend API surface observed
+## 2026-09-02 — preflight — frontend API surface observed
 
 The SPA currently uses the local deterministic mock in `frontend/src/lib/api.ts` and makes **no HTTP requests**, so it currently expects no endpoint paths or HTTP verbs. The backend contract must preserve these local API response shapes when the mock is replaced: `getFindings()` → `Finding[]`; `getFinding(id)` → `Finding | undefined`; `getPlan(findingId)` → `Plan | undefined`; `getAuditLog()` → `AuditLogEntry[]`; `getMetrics()` → `Metrics`; `decideApproval(findingId, action, approver, reason?)` → the updated `Finding` (the mock throws for an unknown finding); `rerunDriftEngine(findingId)` → plan-hash `string | null`; `executeRollback(findingId)` → the updated `Finding` (the mock throws for an unknown finding). Types are defined in `frontend/src/lib/types.ts` and the UI consumes the complete `Entitlement`, `Finding`, `Plan`, `AuditLogEntry`, and `Metrics` shapes there.
 
@@ -183,10 +183,10 @@ the writer boundary.
 ## 2026-09-04 — integration — Record the inherited SPA transport blocker
 
 **Ambiguity:** The integration objective requires real browser HTTP traffic, but the inherited
-SPA API module is an in-memory mock and `AGENTS.md` §0.1 makes `Frontend/` read-only.
+SPA API module is an in-memory mock and `AGENTS.md` §0.1 makes `frontend/` read-only.
 **Chose:** Complete the static inventory and record `## BLOCKED: integration`; do not edit
 components, use a browser shim, or pretend that in-memory calls prove backend integration.
-**Rejected:** Modifying `Frontend/src/lib/api.ts`, which is not a PRD-forced forbidden request,
+**Rejected:** Modifying `frontend/src/lib/api.ts`, which is not a PRD-forced forbidden request,
 or adding a test-only mock network layer.
 **Reversal cost:** Low; a human-approved exception limited to the API client can unblock the
 transport without changing UI components or backend contracts.
@@ -209,10 +209,10 @@ shapes.
 **Reversal cost:** Low; provider registry configuration changes from fixture to real after a
 credentialed Developer Edition rehearsal.
 
-## 2026-09-04 — workspace — Preserve the protected `Frontend/` directory name
+## 2026-09-04 — workspace — Preserve the protected `frontend/` directory name
 
 **Ambiguity:** The requested case-only rename to `frontend/` conflicts with the repository
-standing contract, which marks `Frontend/` read-only and protects the Makefile and CI linkage
+standing contract, which marks `frontend/` read-only and protects the Makefile and CI linkage
 that references that exact path.
 **Chose:** Leave the directory and protected linkages unchanged; run verification against the
 inherited path and avoid a partial case-only rename.

@@ -7,7 +7,7 @@ Milestone prompts add scope; they never override anything here.
 
 ## 0. Non-negotiable boundaries
 
-1. **`Frontend/` is read-only.** Never create, edit, delete, or move any file under `Frontend/`.
+1. **`frontend/` is read-only.** Never create, edit, delete, or move any file under `frontend/`.
    You may read it to learn the API shape the SPA expects. If a backend change would break the
    frontend contract, write the mismatch to `DECISIONS.md` and adapt the *backend*.
 2. **No live AWS calls outside `infra/` and `tests/live/`.** All AWS interaction in unit and
@@ -75,7 +75,7 @@ backend/
     handlers/         # thin Lambda entrypoints; logic lives in the modules above
   tests/
     unit/  integration/  gates/  fixtures/  live/
-Frontend/             # READ-ONLY
+frontend/             # READ-ONLY
 backend/infra/        # CDK/SAM. Touch only in M9.
 backend/prompts/      # milestone prompts (input to backend/scripts/agent_loop.sh)
 backend/DECISIONS.md  # append-only decision log

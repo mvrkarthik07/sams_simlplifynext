@@ -89,7 +89,7 @@ M9 provisions the low-cost `us-east-1` stack: the on-demand graph table, Object-
 pre-image, and audit buckets, ARM64 Lambdas, the Standard approval broker, hourly snapshots,
 HR-event refresh, SecureString connector parameters, and the static SPA bucket. The CDK app
 uses the Vite build output at `frontend/dist` (the repository's case-insensitive checkout may
-show this directory as `Frontend/dist`); if it is absent at synth time, it deploys a harmless
+show this directory as `frontend/dist`); if it is absent at synth time, it deploys a harmless
 placeholder and can be repopulated after `npm run build`.
 
 ```bash
