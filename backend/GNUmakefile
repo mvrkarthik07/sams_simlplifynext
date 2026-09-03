@@ -1,7 +1,7 @@
 # M8 demo targets live here because the milestone's standing contract protects Makefile.
 include Makefile
 
-.PHONY: demo-reset demo-run
+.PHONY: demo-reset demo-run gate-m5b
 
 .PHONY: infra-install
 infra-install:
@@ -16,3 +16,8 @@ demo-reset:
 
 demo-run:
 	./scripts/demo-run
+
+gate-m5b:
+	$(PY) pytest -q -m m5b
+	$(PY) pytest -q -m "rollback or determinism"
+	$(MAKE) verify

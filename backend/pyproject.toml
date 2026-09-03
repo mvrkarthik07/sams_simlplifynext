@@ -10,6 +10,7 @@ requires-python = ">=3.12,<3.13"
 dependencies = [
     "boto3>=1.35",
     "httpx>=0.27",
+    "PyJWT[crypto]>=2.9,<3",
     "opentelemetry-api>=1.29,<2",
     "opentelemetry-sdk>=1.29,<2",
     "pydantic>=2",
@@ -43,6 +44,7 @@ markers = [
     "m3: milestone 3 plan tests",
     "m4: milestone 4 executor tests",
     "m5: milestone 5 real provider tests",
+    "m5b: milestone 5b enterprise, Salesforce, and Workday connector tests",
     "m6: milestone 6 broker tests",
     "m7: milestone 7 audit tests",
     "m8: milestone 8 end-to-end tests",

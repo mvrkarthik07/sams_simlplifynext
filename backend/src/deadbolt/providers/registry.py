@@ -18,6 +18,9 @@ _REAL_MODULES = {
     "github": ("deadbolt.providers.github", ("GitHubProvider",)),
     "slack": ("deadbolt.providers.slack", ("SlackProvider",)),
     "notion": ("deadbolt.providers.notion", ("NotionProvider",)),
+    "github-enterprise": ("deadbolt.providers.github_enterprise", ("GitHubEnterpriseProvider",)),
+    "salesforce": ("deadbolt.providers.salesforce", ("SalesforceProvider",)),
+    "workday": ("deadbolt.providers.workday", ("WorkdayProvider",)),
 }
 
 

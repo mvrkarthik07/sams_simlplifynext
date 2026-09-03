@@ -20,11 +20,21 @@ make demo-run
 across AWS IAM, GitHub, Slack, Notion, Salesforce, and Workday, plus one ratified in-policy
 entitlement that must not be revoked.
 
-The AWS IAM, GitHub, Slack, and Notion connectors are Tier A real-provider interfaces; Salesforce
-and Workday are Tier B deterministic fixtures behind the same `EntitlementProvider` contract.
-The offline demo uses local seeds for every system, while the explicit live rehearsal uses the
-throwaway IAM user and GitHub repository configured for the sandbox. No live credentials are
-needed by CI or `make demo-run`.
+Connector tiers are explicit and configuration-driven:
+
+| System | Tier | Auth | Read surface | Write surface | Reversible | When real credentials arrive |
+|---|---|---|---|---|---|---|
+| AWS IAM | A | boto3 role | users, policies, usage | detach/restore policy | yes | switch registry mode to `real` |
+| GitHub | A | PAT | org members, collaborators | permission downgrade/revoke | yes for collaborators | configure `GITHUB_ORG` and `GITHUB_TOKEN` |
+| GitHub Enterprise | B | enterprise PAT | PATs, SAML credentials, deploy keys, audit/capabilities | credential/key revocation | PAT/SAML no; keys yes | configure Enterprise API/GraphQL bases and PAT |
+| Slack | A | bot token | workspace grants | revoke/restore grant | yes | configure Slack token |
+| Notion | A | integration token | workspace pages/grants | revoke/restore grant | yes | configure Notion token |
+| Salesforce | B (promotable) | Connected App JWT | permission assignments, object/field permissions, login history | assignment delete/recreate | yes for assignments | configure JWT settings and switch registry mode to `real` |
+| Workday | B | tenant bearer/RaaS | workers and security groups | read-only | no | configure tenant/report credentials; HR remains event source |
+
+The offline demo uses real-shaped local seeds for every system, while the explicit live rehearsal
+uses the throwaway IAM user and GitHub repository configured for the sandbox. No live credentials
+are needed by CI or `make demo-run`.
 
 The `budget_guard` Lambda is intended to run on EventBridge’s `rate(6 hours)` schedule, query
 Cost Explorer, and notify Slack once at each newly crossed $5, $10, and $14 threshold.

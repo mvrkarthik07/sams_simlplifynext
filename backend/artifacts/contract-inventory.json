@@ -1,0 +1,24 @@
+{
+  "source": "Frontend/src",
+  "generated_at": "2026-09-04T00:00:00Z",
+  "transport": {
+    "network_calls": [],
+    "fetch": [],
+    "axios": [],
+    "websocket": [],
+    "sse": [],
+    "polling": [],
+    "base_url_environment_variables": []
+  },
+  "client_operations": [
+    {"operation": "getFindings", "source": "Frontend/src/lib/api.ts", "transport": "in-memory"},
+    {"operation": "getFinding", "source": "Frontend/src/lib/api.ts", "transport": "in-memory"},
+    {"operation": "getPlan", "source": "Frontend/src/lib/api.ts", "transport": "in-memory"},
+    {"operation": "getAuditLog", "source": "Frontend/src/lib/api.ts", "transport": "in-memory"},
+    {"operation": "getMetrics", "source": "Frontend/src/lib/api.ts", "transport": "in-memory"},
+    {"operation": "decideApproval", "source": "Frontend/src/lib/api.ts", "transport": "in-memory"},
+    {"operation": "rerunDriftEngine", "source": "Frontend/src/lib/api.ts", "transport": "in-memory"},
+    {"operation": "executeRollback", "source": "Frontend/src/lib/api.ts", "transport": "in-memory"}
+  ],
+  "auth": {"authorization_header": false, "credentials": "none"}
+}

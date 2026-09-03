@@ -8,4 +8,9 @@
 .ruff_cache/
 .import_linter_cache/
 **/__pycache__/
-artifacts/
+artifacts/*
+!artifacts/
+!artifacts/contract-inventory.json
+!artifacts/contract-gaps.md
+!artifacts/ci-e2e-job.yml
+!artifacts/makefile-integration.txt

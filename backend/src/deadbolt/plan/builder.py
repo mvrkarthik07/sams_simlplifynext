@@ -144,6 +144,11 @@ def _stable_finding_id(finding: Finding) -> str:
 def _action_for(finding: Finding, finding_id: str) -> Action | None:
     if finding.observe_only or finding.tier is Tier.T0:
         return None
+    # Irreversible credentials (for example GHE PAT/SAML authorization revocation) can
+    # never enter the automatic T1 path.  The provider advertises this capability in raw;
+    # the frozen Entitlement contract remains unchanged.
+    if finding.tier is Tier.T1 and finding.entitlement.raw.get("reversible") is False:
+        return None
     entitlement = finding.entitlement
     from_scope = entitlement.scope.value
     if finding.tier is Tier.T1 and from_scope != Scope.READ.value:

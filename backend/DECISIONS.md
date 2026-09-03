@@ -179,3 +179,32 @@ the writer boundary.
 **Chose:** Add `infra-install` as a prerequisite in the existing unprotected `GNUmakefile` shim; it runs `npm ci` from the committed lockfile before the protected recipe.
 **Rejected:** Committing `node_modules`, changing the protected Makefile, or relying on an interactive package download.
 **Reversal cost:** Low; remove the prerequisite when CI owns the infrastructure install step.
+
+## 2026-09-04 — integration — Record the inherited SPA transport blocker
+
+**Ambiguity:** The integration objective requires real browser HTTP traffic, but the inherited
+SPA API module is an in-memory mock and `AGENTS.md` §0.1 makes `Frontend/` read-only.
+**Chose:** Complete the static inventory and record `## BLOCKED: integration`; do not edit
+components, use a browser shim, or pretend that in-memory calls prove backend integration.
+**Rejected:** Modifying `Frontend/src/lib/api.ts`, which is not a PRD-forced forbidden request,
+or adding a test-only mock network layer.
+**Reversal cost:** Low; a human-approved exception limited to the API client can unblock the
+transport without changing UI components or backend contracts.
+
+## 2026-09-04 — m5b — Credential reality check and connector tiers
+
+| System | Credential/configuration evidence | Reachability | Tier | Decision |
+|---|---|---|---|---|
+| GitHub Enterprise Cloud | No `GITHUB_ENTERPRISE_*`, enterprise PAT, or configured org | Not authenticated | B | Implement real API shapes with replay fixtures |
+| GitHub Enterprise Server | No base URL or PAT | Not authenticated | B | Share the Cloud/Server client and degrade by capability |
+| Salesforce | No Connected App client ID, username, private key, or access token | Not authenticated | B for this workspace | Implement JWT bearer/SOQL path; promote to Tier A when credentials are supplied |
+| Workday | No tenant, report URL, or credentials; no free sandbox | Not reachable | B | Implement real REST/RaaS and SOAP-shaped fixtures |
+
+**Ambiguity:** m5b calls Salesforce the highest-value Tier A upgrade but this execution
+environment contains no credentials.
+**Chose:** Do not guess or fabricate reachability; ship the authenticated JWT path and byte-shaped
+replay fixtures, and disclose the current tier honestly.
+**Rejected:** Username/password Salesforce auth, synthetic live credentials, or unverified API
+shapes.
+**Reversal cost:** Low; provider registry configuration changes from fixture to real after a
+credentialed Developer Edition rehearsal.
