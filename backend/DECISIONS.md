@@ -208,3 +208,15 @@ replay fixtures, and disclose the current tier honestly.
 shapes.
 **Reversal cost:** Low; provider registry configuration changes from fixture to real after a
 credentialed Developer Edition rehearsal.
+
+## 2026-09-04 — workspace — Preserve the protected `Frontend/` directory name
+
+**Ambiguity:** The requested case-only rename to `frontend/` conflicts with the repository
+standing contract, which marks `Frontend/` read-only and protects the Makefile and CI linkage
+that references that exact path.
+**Chose:** Leave the directory and protected linkages unchanged; run verification against the
+inherited path and avoid a partial case-only rename.
+**Rejected:** Moving or recreating the frontend directory, editing protected Makefile/CI files,
+or adding a lowercase alias that would make repository ownership and guard checks ambiguous.
+**Reversal cost:** Low; a human can rename the directory and re-bless all protected path
+references in one coordinated change when the standing contract is updated.
