@@ -84,8 +84,6 @@ def _config(provider: str, payload: Mapping[str, object]) -> dict[str, object]:
             isinstance(item, str) and item.strip() for item in repos
         ):
             raise ValueError("repos must be a list of repository names")
-        if not repos:
-            raise ValueError("at least one repository is required")
         return {
             "org": _text(payload, "org"),
             "token": _text(payload, "token"),

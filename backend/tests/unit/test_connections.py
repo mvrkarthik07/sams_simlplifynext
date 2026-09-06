@@ -38,8 +38,10 @@ def test_service_validates_and_removes_each_provider_without_returning_secrets()
     service = ConnectionService(MemoryConnectionStore())
     with pytest.raises(ValueError, match="unsupported provider"):
         service.save("operator", "slack", {})
-    with pytest.raises(ValueError, match="repos"):
-        service.save("operator", "github", {"org": "acme", "token": "secret", "repos": []})
+    github_org_wide = service.save(
+        "operator", "github", {"org": "acme", "token": "secret", "repos": []}
+    )
+    assert github_org_wide["status"] == "connected"
     with pytest.raises(ValueError, match="unsupported connection field"):
         service.save(
             "operator",

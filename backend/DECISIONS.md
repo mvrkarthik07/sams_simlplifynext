@@ -663,3 +663,17 @@ unconfirmed natural-language writes.
 
 **Reversal cost:** Medium; remove the GitHub MCP tools and provider write methods, then redeploy
 the MCP Lambda. Existing connection storage and read-only capture behavior remain independent.
+## 2026-09-07 — m16 — Make GitHub repository scope optional for read-only organization scans
+
+**Ambiguity:** Organization administrators need an organization-level connection, while the
+existing GitHub scan required manually entering repository names.
+
+**Chose:** Accept an empty GitHub repository list for connection tests and dashboard scans. The
+provider discovers all visible organization repositories, then reads collaborators from each.
+MCP onboarding and access-changing tools remain explicitly repository-scoped and still require
+preview, the current plan hash, and confirmation.
+
+**Rejected:** Automatically grant or remove access across every organization repository.
+
+**Reversal cost:** Low; restore the required repository validation and remove the discovery branch,
+then redeploy the API and frontend.

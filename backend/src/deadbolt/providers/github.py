@@ -299,6 +299,19 @@ class GitHubProvider:
         """Remove a user from the organization."""
         self._request("DELETE", f"/orgs/{self.org}/memberships/{username}")
 
+    def _scan_repositories(self) -> tuple[str, ...]:
+        if self.repos:
+            return self.repos
+        discovered: set[str] = set()
+        for repository in self.repositories():
+            full_name = _text(repository.get("full_name"))
+            name = _text(repository.get("name"))
+            if not full_name and name:
+                full_name = f"{self.org}/{name}"
+            if full_name:
+                discovered.add(full_name)
+        return tuple(sorted(discovered, key=lambda value: value.encode("utf-8")))
+
     def snapshot(self) -> Iterable[Entitlement]:
         if not self.org:
             raise ProviderError("GitHub organization is required")
@@ -354,7 +367,7 @@ class GitHubProvider:
                 },
             )
         ]
-        for repo in self.repos:
+        for repo in self._scan_repositories():
             owner, separator, name = repo.partition("/")
             if not separator or not owner or not name:
                 raise ProviderError(f"GitHub repository must be owner/name: {repo!r}")

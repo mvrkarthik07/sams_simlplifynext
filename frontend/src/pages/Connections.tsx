@@ -140,7 +140,7 @@ export function Connections() {
 
               {provider.id === 'github' && <>
                 <Field label="Organization" value={values.org} onChange={(value) => update('github', 'org', value)} placeholder="your-org" />
-                <Field label="Repositories" value={values.repos} onChange={(value) => update('github', 'repos', value)} placeholder="org/repo, one per line" multiline />
+                <Field label="Repositories (optional)" value={values.repos} onChange={(value) => update('github', 'repos', value)} placeholder="Leave blank to scan every visible organization repository" multiline />
                 <SecretField label="Fine-grained PAT" value={values.token} onChange={(value) => update('github', 'token', value)} placeholder="Only sent over HTTPS" />
               </>}
               {provider.id === 'salesforce' && <>
@@ -170,7 +170,7 @@ export function Connections() {
         })}
       </div>
 
-      <p className="text-xs text-muted-foreground">Testing only reads provider metadata. Use “Scan into dashboard” when you are ready to make that verified snapshot the review dataset; scans remain read-only and never change provider access.</p>
+      <p className="text-xs text-muted-foreground">Testing only reads provider metadata. For GitHub, leave repositories blank to discover every repository visible to the organization token. Use “Scan into dashboard” when you are ready to make that verified snapshot the review dataset; scans remain read-only and never change provider access.</p>
     </div>
   );
 }

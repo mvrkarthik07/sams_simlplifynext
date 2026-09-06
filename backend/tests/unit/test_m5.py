@@ -178,6 +178,37 @@ def test_github_iam_inventory_and_membership_operations() -> None:
 
 
 @pytest.mark.m5
+@respx.mock
+def test_github_snapshot_discovers_all_visible_repositories_when_unbounded() -> None:
+    base = "https://api.github.test"
+    respx.get(f"{base}/orgs/acme/members").mock(
+        return_value=httpx.Response(200, json=[{"login": "alice"}])
+    )
+    respx.get(f"{base}/user").mock(return_value=httpx.Response(200, json={"login": "alice"}))
+    respx.get(f"{base}/orgs/acme/repos").mock(
+        return_value=httpx.Response(
+            200,
+            json=[
+                {"name": "zeta", "full_name": "acme/zeta"},
+                {"name": "alpha"},
+            ],
+        )
+    )
+    respx.get(f"{base}/repos/acme/alpha/collaborators").mock(
+        return_value=httpx.Response(200, json=[{"login": "alice", "permission": "pull"}])
+    )
+    respx.get(f"{base}/repos/acme/zeta/collaborators").mock(
+        return_value=httpx.Response(200, json=[{"login": "alice", "permission": "push"}])
+    )
+
+    provider = GitHubProvider("acme", "token", base_url=base)
+    resources = {
+        item.resource for item in provider.snapshot() if item.raw.get("kind") == "collaborator"
+    }
+    assert resources == {"acme/alpha", "acme/zeta"}
+
+
+@pytest.mark.m5
 def test_cli_dry_run_commands_are_terminal_safe(capsys: pytest.CaptureFixture[str]) -> None:
     for command in ("snapshot", "detect", "plan", "execute", "rollback"):
         assert main([command, "--dry-run"]) == 0
