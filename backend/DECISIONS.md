@@ -677,3 +677,23 @@ preview, the current plan hash, and confirmation.
 
 **Reversal cost:** Low; restore the required repository validation and remove the discovery branch,
 then redeploy the API and frontend.
+
+## 2026-09-07 — m12r — Refine the entitlement register under owner authorization
+
+**Ambiguity:** The owner requests frontend implementation despite the standing read-only default; the requested 12-row review fixture conflicts with the PRD's 20-planted-finding demo. Some specified primitive colors cannot meet the requested text contrast floor on every interaction surface. The API has no general undo operation or anonymous live capture operation.
+
+**Chose:** Treat this explicit screen-refinement request as the frontend exception. Preserve the PRD scenario and add a separate, clearly labeled 12-finding HTTP review fixture. Retain graphite primitives but raise semantic secondary/disabled/error text colors and use a readable neutral tier ramp. Use native select controls; collapse identity groups persistently across filters; sort groups by their first matching sorted finding. Combine detection/scoring into pipeline position 1 of 5. Use an eight-second, explicitly scheduled cancellation window before submitting decisions; cancel pending work on navigation. Refresh rereads persisted captures; Run capture uses configured read-only connection scans, or directs an unconfigured operator to Connections. Never restamp an old capture after a GET. Keep the five meaningful health metrics; omit uninstrumented sandbox billing from this review screen. New fonts are static OFL assets, not runtime dependencies; no Lambda dependency, cost, or cold-start impact. Browser and axe packages are development verification tools only.
+
+**Rejected:** Altering frozen contracts/golden fixtures, inventing live scoring evidence, claiming provider access changed when the API only records a rehearsal decision, low-contrast disabled text, or relying on undo after an irreversible request has already been sent.
+
+**Reversal cost:** Medium for the screen styles/components; low for the separate fixture tooling. Transport operation signatures and backend engine behavior stay stable.
+
+## 2026-09-07 — m12r — Window large review queues after the measured filter regression
+
+**Ambiguity:** Full DOM rendering initially met the 5,000-finding target but later repeatable isolated measurements reached 146ms. The screen must retain search/filter/count behavior over the full queue.
+
+**Chose:** Window presentation above 200 findings with a 600px scroll buffer, using a scroll/resize external store. Keep filtering, sorting, grouping and per-option counts in their existing single derivation over all records. Test the top, middle and bottom at desktop/tablet/mobile widths and search for record 5,000. Use no runtime dependency. Mobile reserves the 106px content box plus padding/borders to match its 132px rendered card.
+
+**Rejected:** Reporting only the earlier passing timing, adding pagination that changes the queue workflow, or reducing the measured source dataset.
+
+**Reversal cost:** Low; remove WindowedFindings and its threshold after an alternative renderer meets the same measured budget.

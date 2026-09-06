@@ -1,414 +1,1213 @@
-import { memo, startTransition, useDeferredValue, useEffect, useMemo, useState } from 'react';
-import { ArrowUpDown, Check, CircleDot, RefreshCw } from 'lucide-react';
+import {
+  lazy,
+  memo,
+  Profiler,
+  startTransition,
+  Suspense,
+  useCallback,
+  useDeferredValue,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from 'react';
+import type {
+  KeyboardEvent,
+  MouseEvent,
+  ProfilerOnRenderCallback,
+} from 'react';
+import ArrowUpDown from 'lucide-react/dist/esm/icons/arrow-up-down.mjs';
+import ArrowUpRight from 'lucide-react/dist/esm/icons/arrow-up-right.mjs';
+import ChevronDown from 'lucide-react/dist/esm/icons/chevron-down.mjs';
+import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.mjs';
+import Search from 'lucide-react/dist/esm/icons/search.mjs';
+import LockKeyhole from 'lucide-react/dist/esm/icons/lock-keyhole.mjs';
 import { useNavigate } from 'react-router-dom';
-import { ProvenanceBadge } from '../components/ProvenanceBadge';
-import { api } from '../lib/api';
-import type { Finding, Metrics, Tier } from '../lib/types';
+import { api, DATA_CHANGED_EVENT } from '../lib/api';
+import { isUnauthenticatedMode } from '../lib/auth';
+import type { Finding, Metrics, ConnectionProvider } from '../lib/types';
+import {
+  absoluteTime,
+  captureTime,
+  deriveRegister,
+  entitlementLabel,
+  errorMessage,
+  healthMetrics,
+  relativeTime,
+  riskBand,
+  shortTime,
+  SOURCE_NAMES,
+  stageLabel,
+  stagePosition,
+  STALE_MS,
+  TIERS,
+  TIER_NAMES,
+} from '../lib/register';
+import type { Sort, SortKey, SourceFilter, TierFilter } from '../lib/register';
 
-type SortKey = 'score' | 'tier' | 'identity' | 'system' | 'stage';
-type TierFilter = 'all' | Tier;
-type SourceFilter = 'all' | 'captured' | 'fixture';
-
-const TIER_ORDER: Tier[] = ['T0', 'T1', 'T2', 'T3'];
-const tierLabel: Record<Tier, string> = {
-  T0: 'Observe',
-  T1: 'Auto-downgrade',
-  T2: 'Broker',
-  T3: 'Page',
+const mobileQuery = '(max-width: 767px)';
+const subscribeViewport = (notify: () => void) => {
+  const query = window.matchMedia(mobileQuery);
+  query.addEventListener('change', notify);
+  return () => query.removeEventListener('change', notify);
 };
+const mobileSnapshot = () => window.matchMedia(mobileQuery).matches;
+const serverSnapshot = () => false;
+const subscribeScroll = (notify: () => void) => {
+  let frame = 0;
+  const changed = () => {
+    cancelAnimationFrame(frame);
+    frame = requestAnimationFrame(notify);
+  };
+  window.addEventListener('scroll', changed, { passive: true });
+  window.addEventListener('resize', changed);
+  return () => {
+    cancelAnimationFrame(frame);
+    window.removeEventListener('scroll', changed);
+    window.removeEventListener('resize', changed);
+  };
+};
+const scrollSnapshot = () =>
+  `${Math.floor(window.scrollY / 88) * 88}:${window.innerWidth}:${window.innerHeight}`;
+const serverScrollSnapshot = () => '0:1440:1000';
 
-/** Score-band vocabulary, single source of truth for both the numeral cell and the risk bar. */
-const RISK_BANDS = [
-  { ceiling: 30, key: 'low', label: 'low' },
-  { ceiling: 60, key: 'elevated', label: 'elevated' },
-  { ceiling: 85, key: 'high', label: 'high' },
-  { ceiling: Infinity, key: 'critical', label: 'critical' },
-] as const;
-
-function riskBand(score: number): (typeof RISK_BANDS)[number] {
-  return RISK_BANDS.find((band) => score < band.ceiling) ?? RISK_BANDS[RISK_BANDS.length - 1];
+const loadDetail = () => import('../components/register/DetailPanel');
+const DetailPanel = lazy(loadDetail);
+let detailPreloaded = false;
+function preloadDetail() {
+  if (!detailPreloaded) {
+    detailPreloaded = true;
+    void loadDetail().catch(() => {
+      detailPreloaded = false;
+    });
+  }
 }
-
-/** Below this many samples a MEASURED metric is still shown, qualified as low-confidence. */
-const LOW_SAMPLE_THRESHOLD = 10;
-type MetricState = 'measured' | 'no-events' | 'not-wired';
-interface KpiDatum {
-  key: string;
+const recordProfile: ProfilerOnRenderCallback = (
+  _id,
+  phase,
+  actualDuration,
+  _baseDuration,
+  startTime,
+  commitTime,
+) => {
+  if (
+    import.meta.env.DEV &&
+    new URLSearchParams(location.search).has('profile')
+  ) {
+    window.dispatchEvent(
+      new CustomEvent('deadbolt:profile', {
+        detail: { phase, actualDuration, startTime, commitTime },
+      }),
+    );
+  }
+};
+interface PendingDecision {
+  finding: Finding;
+  action: string;
   label: string;
-  state: MetricState;
-  value: string;
-  caption: string;
-  primary?: boolean;
+  reason: string;
+  expires: number;
 }
-
-function isCaptured(finding: Finding): boolean {
-  return finding.source === 'captured' || finding.entitlement.raw.source === 'captured';
-}
-
-/** Some resource identifiers are internal URNs (e.g. "github:pat:mvrkarthik07" for a
- * credential's own token entitlement). The table shows a readable description; the raw
- * URN stays available on the finding detail page only. */
-const CREDENTIAL_URN = /^([a-z0-9-]+):(pat|oauth|token|api-key):(.+)$/i;
-const CREDENTIAL_KIND_LABEL: Record<string, string> = {
-  pat: 'Personal access token',
-  oauth: 'OAuth grant',
-  token: 'Access token',
-  'api-key': 'API key',
-};
-function resourceLabel(resource: string): string {
-  const match = resource.match(CREDENTIAL_URN);
-  if (!match) return resource;
-  const [, , kind, owner] = match;
-  return `${CREDENTIAL_KIND_LABEL[kind.toLowerCase()] ?? 'Credential'} — ${owner}`;
-}
-
-function sampleQualifier(n: number): string {
-  return n < LOW_SAMPLE_THRESHOLD ? ` (low sample, n=${n})` : ` (n=${n})`;
-}
-
-function buildKpis(metrics: Metrics): KpiDatum[] {
-  const counts = metrics.counts;
-  const planted = counts?.planted ?? 0;
-  const detected = counts?.detected ?? 0;
-  const executed = counts?.executed ?? 0;
-  const revocations = counts?.revocations ?? 0;
-
-  const recallState: MetricState = planted > 0 ? 'measured' : 'not-wired';
-  const executionState: MetricState = executed > 0 ? 'measured' : 'no-events';
-  const revocationState: MetricState = revocations > 0 ? 'measured' : 'no-events';
-
-  return [
-    {
-      key: 'recall',
-      label: 'Drift recall',
-      state: recallState,
-      primary: true,
-      value: recallState === 'measured' ? `${metrics.drift_recall}%` : 'Not instrumented',
-      caption: recallState === 'measured'
-        ? `${detected} of ${planted} planted findings caught${sampleQualifier(planted)}, against a 95% target.`
-        : 'No planted-finding rehearsal has run, so recall cannot be compared to its 95% target.',
-    },
-    {
-      key: 'false-revoke',
-      label: 'False revoke',
-      state: executionState,
-      value: executionState === 'measured' ? `${metrics.false_revocation_rate}%` : 'No revokes yet',
-      caption: executionState === 'measured'
-        ? `Checked ${executed} executions against ratified access${sampleQualifier(executed)}; target is 0%.`
-        : 'Nothing has executed yet, so a false-revoke rate would be fabricated.',
-    },
-    {
-      key: 'mean-time-to-revoke',
-      label: 'Mean time to revoke',
-      state: revocationState,
-      value: revocationState === 'measured' ? metrics.mean_time_to_revocation : 'No revokes yet',
-      caption: revocationState === 'measured'
-        ? `Averaged across ${revocations} revocations${sampleQualifier(revocations)}.`
-        : 'No revocation has completed, so there is no duration to average.',
-    },
-    {
-      key: 'decision-time',
-      label: 'Decision time',
-      state: 'not-wired',
-      value: 'Not instrumented',
-      caption: 'Operator decision timing has no event source wired up yet. Target is under 2 minutes.',
-    },
-    {
-      key: 'reversibility',
-      label: 'Reversibility',
-      state: executionState,
-      value: executionState === 'measured' ? `${metrics.reversibility}%` : 'No revokes yet',
-      caption: executionState === 'measured'
-        ? `${executed} executions rolled back cleanly${sampleQualifier(executed)}; target is 100%.`
-        : 'Nothing has executed yet, so there is nothing to roll back.',
-    },
-    {
-      key: 'sandbox-cost',
-      label: 'Sandbox cost',
-      state: 'not-wired',
-      value: 'Not instrumented',
-      caption: 'Spend tracking is not wired to a billing source yet. Target is under $8 per rehearsal.',
-    },
-  ];
+interface Toast {
+  text: string;
+  error?: boolean;
 }
 
 export function Dashboard() {
-  const [metrics, setMetrics] = useState<Metrics | null>(null);
-  const [findings, setFindings] = useState<Finding[]>([]);
+  return (
+    <Profiler id="entitlement-register" onRender={recordProfile}>
+      <Register />
+    </Profiler>
+  );
+}
+function Register() {
+  const mobile = useSyncExternalStore(
+    subscribeViewport,
+    mobileSnapshot,
+    serverSnapshot,
+  );
+  const [payload, setPayload] = useState<{
+    findings: Finding[];
+    metrics: Metrics | null;
+  }>({ findings: [], metrics: null });
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<{ code?: string; message: string } | null>(null);
-  const [sort, setSort] = useState<{ key: SortKey; descending: boolean }>({ key: 'score', descending: true });
-  const [tierFilter, setTierFilter] = useState<TierFilter>('all');
-  const [sourceFilter, setSourceFilter] = useState<SourceFilter>('all');
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [now, setNow] = useState(Date.now);
+  const [sort, setSort] = useState<Sort>({ key: 'risk', descending: true });
+  const [tier, setTier] = useState<TierFilter>('all');
+  const [source, setSource] = useState<SourceFilter>('all');
+  const [search, setSearch] = useState('');
+  const deferredSearch = useDeferredValue(search);
+  const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [pending, setPending] = useState<PendingDecision | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [toast, setToast] = useState<Toast | null>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
+  const origin = useRef<HTMLElement | null>(null);
+  const sequence = useRef(0);
+  const pendingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const navigate = useNavigate();
 
-  const load = async () => {
-    setLoading(true);
-    setError(null);
+  const load = useCallback(async () => {
+    const request = ++sequence.current;
+    setRefreshing(true);
     try {
-      const [nextMetrics, nextFindings] = await Promise.all([api.getMetrics(), api.getFindings()]);
-      setMetrics(nextMetrics);
-      setFindings(nextFindings);
+      const [findings, metrics] = await Promise.all([
+        api.getFindings(),
+        api.getMetrics(),
+      ]);
+      if (request !== sequence.current) return;
+      setPayload({ findings, metrics });
+      setError(null);
+      setNow(Date.now());
     } catch (reason) {
-      setError({
-        code: typeof reason === 'object' && reason !== null && 'code' in reason ? String(reason.code) : undefined,
-        message: reason instanceof Error ? reason.message : 'Unable to load dashboard data.',
-      });
+      if (request === sequence.current) setError(errorMessage(reason));
     } finally {
-      setLoading(false);
+      if (request === sequence.current) {
+        setLoading(false);
+        setRefreshing(false);
+      }
+    }
+  }, []);
+  useEffect(() => {
+    let canceled = false;
+    void Promise.resolve().then(() => {
+      if (!canceled) void load();
+    });
+    const invalidate = () => {
+      sequence.current++;
+    };
+    const changed = () => {
+      void load();
+    };
+    const timer = window.setInterval(() => setNow(Date.now()), 30_000);
+    const shortcut = (event: globalThis.KeyboardEvent) => {
+      if (
+        (event.metaKey || event.ctrlKey) &&
+        event.key.toLowerCase() === 'k' &&
+        !document.querySelector('dialog[open]')
+      ) {
+        event.preventDefault();
+        searchRef.current?.focus();
+      }
+    };
+    window.addEventListener(DATA_CHANGED_EVENT, changed);
+    window.addEventListener('keydown', shortcut);
+    return () => {
+      canceled = true;
+      invalidate();
+      window.clearInterval(timer);
+      if (pendingTimer.current) clearTimeout(pendingTimer.current);
+      window.removeEventListener(DATA_CHANGED_EVENT, changed);
+      window.removeEventListener('keydown', shortcut);
+    };
+  }, [load]);
+  useEffect(() => {
+    if (!toast || toast.error) return;
+    const timer = window.setTimeout(() => setToast(null), 8000);
+    return () => window.clearTimeout(timer);
+  }, [toast]);
+
+  const view = useMemo(
+    () => deriveRegister(payload.findings, tier, source, deferredSearch, sort),
+    [payload.findings, tier, source, deferredSearch, sort],
+  );
+  const latest = view.latestCapture;
+  const stale = latest !== null && now - latest > STALE_MS;
+  const sourceName =
+    view.systems.size === 1
+      ? {
+          github: 'GitHub',
+          'aws-iam': 'AWS IAM',
+          slack: 'Slack',
+          notion: 'Notion',
+          salesforce: 'Salesforce',
+          workday: 'Workday',
+        }[Array.from(view.systems)[0]]
+      : `${view.systems.size} systems`;
+  const selected = selectedId ? view.byId.get(selectedId) : undefined;
+  const hasFilters = tier !== 'all' || source !== 'all' || search.trim() !== '';
+  const clearFilters = () =>
+    startTransition(() => {
+      setTier('all');
+      setSource('all');
+      setSearch('');
+    });
+  const changeSort = useCallback(
+    (key: SortKey) =>
+      startTransition(() =>
+        setSort((current) => ({
+          key,
+          descending:
+            current.key === key
+              ? !current.descending
+              : key === 'risk' || key === 'tier',
+        })),
+      ),
+    [],
+  );
+  const activate = useCallback(
+    (event: MouseEvent<HTMLElement> | KeyboardEvent<HTMLElement>) => {
+      if ('key' in event && event.key !== 'Enter' && event.key !== ' ') return;
+      const target = (event.target as HTMLElement).closest<HTMLElement>(
+        '[data-finding-id]',
+      );
+      if (!target || target.dataset.disabled === 'true') return;
+      event.preventDefault();
+      origin.current = target;
+      setSelectedId(target.dataset.findingId ?? null);
+    },
+    [],
+  );
+  const toggleGroup = useCallback((event: MouseEvent<HTMLButtonElement>) => {
+    const identity = event.currentTarget.dataset.identity;
+    if (!identity) return;
+    startTransition(() =>
+      setCollapsed((current) => {
+        const next = new Set(current);
+        if (next.has(identity)) next.delete(identity);
+        else next.add(identity);
+        return next;
+      }),
+    );
+  }, []);
+  const closeDetail = useCallback(() => {
+    setSelectedId(null);
+    requestAnimationFrame(() => {
+      if (origin.current?.isConnected) origin.current.focus();
+      else searchRef.current?.focus();
+    });
+  }, []);
+  const scheduleDecision = useCallback(
+    (finding: Finding, action: string, label: string, reason = '') => {
+      if (pendingTimer.current || submitting) return;
+      setToast(null);
+      setPending({
+        finding,
+        action,
+        label,
+        reason,
+        expires: Date.now() + 8000,
+      });
+      pendingTimer.current = setTimeout(async () => {
+        pendingTimer.current = null;
+        setPending(null);
+        setSubmitting(true);
+        try {
+          const updated =
+            action === 'rollback'
+              ? await api.executeRollback(finding.finding_id)
+              : await api.decideApproval(
+                  finding.finding_id,
+                  action,
+                  'Access Reviewer',
+                  reason,
+                );
+          setPayload((current) => ({
+            ...current,
+            findings: current.findings.map((item) =>
+              item.finding_id === updated.finding_id ? updated : item,
+            ),
+          }));
+          setToast({ text: `${label} recorded for ${finding.finding_id}.` });
+        } catch (reason) {
+          setToast({
+            text: `${label} was not recorded. ${errorMessage(reason)}`,
+            error: true,
+          });
+        } finally {
+          setSubmitting(false);
+        }
+      }, 8000);
+    },
+    [submitting],
+  );
+  const undo = () => {
+    if (pendingTimer.current) clearTimeout(pendingTimer.current);
+    pendingTimer.current = null;
+    setToast({
+      text: `${pending?.label ?? 'Decision'} canceled. No change was sent.`,
+    });
+    setPending(null);
+  };
+  const runCapture = async () => {
+    if (!view.captured) {
+      navigate('/connections');
+      return;
+    }
+    setRefreshing(true);
+    try {
+      const connections = await api.getConnections();
+      const configured = connections.find(
+        (connection) =>
+          connection.status === 'connected' &&
+          view.systems.has(connection.provider),
+      );
+      if (!configured) {
+        navigate('/connections');
+        return;
+      }
+      await api.scanConnection(configured.provider as ConnectionProvider);
+      await load();
+    } catch (reason) {
+      setError(errorMessage(reason));
+    } finally {
+      setRefreshing(false);
     }
   };
 
-  useEffect(() => { void load(); }, []);
-
-  const liveCount = findings.filter(isCaptured).length;
-  const fixtureCount = findings.length - liveCount;
-  const sourceLabel = liveCount > 0 ? 'GitHub capture' : fixtureCount > 0 ? 'Offline fixture' : 'No source loaded';
-  const hasBothSources = liveCount > 0 && fixtureCount > 0;
-
-  // Single traversal: filtering, per-axis chip counts, and tier bucketing all
-  // happen in one pass over `findings`. Sorting the already-filtered subset
-  // is a necessary, much smaller, second pass.
-  const { rows, tierCounts, sourceCounts } = useMemo(() => {
-    const tierCounts: Record<TierFilter, number> = { all: 0, T0: 0, T1: 0, T2: 0, T3: 0 };
-    const sourceCounts: Record<SourceFilter, number> = { all: 0, captured: 0, fixture: 0 };
-    const matched: Finding[] = [];
-    for (const finding of findings) {
-      const sourceKey: 'captured' | 'fixture' = isCaptured(finding) ? 'captured' : 'fixture';
-      const matchesSource = sourceFilter === 'all' || sourceFilter === sourceKey;
-      const matchesTier = tierFilter === 'all' || tierFilter === finding.tier;
-      if (matchesSource) {
-        tierCounts.all += 1;
-        tierCounts[finding.tier] += 1;
-      }
-      if (matchesTier) {
-        sourceCounts.all += 1;
-        sourceCounts[sourceKey] += 1;
-      }
-      if (matchesSource && matchesTier) matched.push(finding);
-    }
-    const sorted = [...matched].sort((left, right) => {
-      const values: Record<SortKey, [string | number, string | number]> = {
-        score: [left.score.total, right.score.total],
-        tier: [TIER_ORDER.indexOf(left.tier), TIER_ORDER.indexOf(right.tier)],
-        identity: [left.entitlement.identity_id, right.entitlement.identity_id],
-        system: [left.entitlement.system, right.entitlement.system],
-        stage: [left.current_stage, right.current_stage],
-      };
-      const [a, b] = values[sort.key];
-      const result = typeof a === 'number' && typeof b === 'number' ? a - b : String(a).localeCompare(String(b));
-      return sort.descending ? -result : result;
-    });
-    return { rows: sorted, tierCounts, sourceCounts };
-  }, [findings, tierFilter, sourceFilter, sort]);
-
-  // Keeps filter-chip clicks responsive by letting React defer re-rendering
-  // the (potentially large) row list behind the interaction.
-  const deferredRows = useDeferredValue(rows);
-
-  const setSortKey = (key: SortKey) => {
-    startTransition(() => {
-      setSort((current) => current.key === key
-        ? { key, descending: !current.descending }
-        : { key, descending: key === 'score' || key === 'tier' });
-    });
-  };
-
-  const clearFilters = () => {
-    startTransition(() => {
-      setTierFilter('all');
-      setSourceFilter('all');
-    });
-  };
-
+  const groupRows =
+    view.count > 200 ? (
+      <WindowedFindings
+        mobile={mobile}
+        groups={view.groups}
+        collapsed={collapsed}
+        onToggle={toggleGroup}
+        selectedId={selectedId}
+        pendingId={pending?.finding.finding_id ?? null}
+        activate={activate}
+        now={now}
+      />
+    ) : (
+      view.groups.map((group) => (
+        <FindingGroupRows
+          key={group.identity}
+          mobile={mobile}
+          identity={group.identity}
+          findings={group.findings}
+          collapsed={collapsed.has(group.identity)}
+          onToggle={toggleGroup}
+          selectedId={selectedId}
+          pendingId={pending?.finding.finding_id ?? null}
+          activate={activate}
+          now={now}
+        />
+      ))
+    );
   return (
-    <div className="app-page dashboard-page">
-      <header className="dashboard-header">
-        <div>
-          <h1 className="dashboard-title">Entitlement register</h1>
-          <p className="dashboard-subtitle">Access drift found since the last capture, with a remediation plan pre-staged for each row.</p>
-        </div>
-        <div className="dashboard-actions">
-          <div className="source-summary">
-            <span className="source-summary-label">Current source</span>
-            <span className="source-summary-value"><CircleDot size={13} aria-hidden="true" /> {sourceLabel}</span>
-            <span className="source-summary-note">{findings.length} findings loaded</span>
+    <div className="register-page">
+      <div className="register-content">
+        <header className="register-header">
+          <h1>Entitlement register</h1>
+          <div className="capture-line">
+            {loading ? (
+              <span
+                className="skeleton timestamp-skeleton"
+                aria-label="Loading capture time"
+              />
+            ) : (
+              <time
+                title={
+                  latest
+                    ? absoluteTime(latest)
+                    : 'No capture timestamp was returned'
+                }
+                dateTime={latest ? new Date(latest).toISOString() : undefined}
+              >
+                {latest
+                  ? relativeTime(latest, now)
+                  : 'Capture time unavailable'}
+              </time>
+            )}
+            {!loading && payload.findings.length > 0 ? (
+              <span>{sourceName}</span>
+            ) : null}
+            {!loading ? (
+              <span
+                className={`capture-status ${error ? 'status-error' : stale ? 'status-stale' : latest ? 'status-healthy' : 'muted'}`}
+              >
+                <span aria-hidden="true">
+                  {error ? '✕' : stale ? '▲' : '●'}
+                </span>{' '}
+                {error
+                  ? 'Failed'
+                  : stale
+                    ? 'Stale'
+                    : latest
+                      ? 'Connected'
+                      : 'No capture'}
+              </span>
+            ) : null}
+            <button
+              className="register-icon-button"
+              onClick={() => void load()}
+              disabled={loading || refreshing}
+              aria-label={refreshing ? 'Refreshing capture' : 'Refresh capture'}
+              title="Refresh capture"
+            >
+              <RefreshCw
+                size={16}
+                className={refreshing && !loading ? 'refresh-spinning' : ''}
+                aria-hidden="true"
+              />
+            </button>
           </div>
-          <button type="button" className="outline-button refresh-button" onClick={() => void load()} disabled={loading}>
-            <RefreshCw size={14} className={loading ? 'animate-spin' : ''} aria-hidden="true" /> Refresh
-          </button>
+        </header>
+        <div className="health-line" aria-label="Governance health">
+          {loading ? (
+            <>
+              <span className="skeleton health-skeleton" />
+              <span className="skeleton health-skeleton" />
+              <span className="skeleton health-skeleton" />
+            </>
+          ) : payload.metrics ? (
+            healthMetrics(payload.metrics).map((metric) => (
+              <span className="health-metric" key={metric.label}>
+                {metric.label}{' '}
+                <span className={`metric-${metric.state}`}>{metric.value}</span>
+              </span>
+            ))
+          ) : (
+            <span className="metric-not-wired">
+              Health metrics unavailable until the capture service responds.
+            </span>
+          )}
         </div>
-      </header>
-
-      {loading && <DashboardSkeleton />}
-
-      {error && !loading && (
-        <section className="error-panel" role="alert">
-          <p className="font-semibold">Dashboard data could not be loaded.</p>
-          <p className="mt-1 font-mono text-xs text-destructive">{error.code ? `${error.code}: ` : ''}{error.message}</p>
-          <button type="button" onClick={() => void load()} className="outline-button mt-4">Retry</button>
-        </section>
-      )}
-
-      {!loading && !error && metrics && (
-        <>
-          <MetricsRule metrics={metrics} />
-          <section className="findings-section" aria-labelledby="findings-heading">
-            <div className="section-heading">
-              <div>
-                <h2 id="findings-heading">Drift findings</h2>
-                <p className="muted section-description">{deferredRows.length} of {findings.length} findings shown.</p>
-              </div>
-              <div className="provenance-legend" aria-label="Provenance legend">
-                {liveCount > 0 && <span><span className="provenance-live" aria-hidden="true">●</span> Owner capture ({liveCount})</span>}
-                {fixtureCount > 0 && <span><span className="provenance-simulated" aria-hidden="true">●</span> Offline fixture ({fixtureCount})</span>}
-              </div>
+        <section aria-label="Findings review queue" className="register-queue">
+          <div className="register-toolbar">
+            <div className="register-filters">
+              <label>
+                Tier{' '}
+                <select
+                  aria-label="Filter by tier"
+                  value={tier}
+                  onChange={(event) =>
+                    startTransition(() =>
+                      setTier(event.target.value as TierFilter),
+                    )
+                  }
+                >
+                  <option value="all">All ({view.tierCounts.all})</option>
+                  {TIERS.map((value) => (
+                    <option
+                      key={value}
+                      value={value}
+                      disabled={view.tierCounts[value] === 0}
+                    >
+                      {value} {TIER_NAMES[value]} ({view.tierCounts[value]})
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Source{' '}
+                <select
+                  aria-label="Filter by source"
+                  value={source}
+                  onChange={(event) =>
+                    startTransition(() =>
+                      setSource(event.target.value as SourceFilter),
+                    )
+                  }
+                >
+                  {(['all', 'fixture', 'captured'] as const).map((value) => (
+                    <option
+                      key={value}
+                      value={value}
+                      disabled={
+                        value !== 'all' && view.sourceCounts[value] === 0
+                      }
+                    >
+                      {SOURCE_NAMES[value]} ({view.sourceCounts[value]})
+                    </option>
+                  ))}
+                </select>
+              </label>
             </div>
-
-            <div className="filter-groups">
-              <div className="filter-group" role="group" aria-label="Filter by policy tier">
-                <span className="filter-label">Tier</span>
-                <FilterChip label="All tiers" count={tierCounts.all} active={tierFilter === 'all'} onClick={() => startTransition(() => setTierFilter('all'))} />
-                {TIER_ORDER.slice().reverse().map((tier) => (
-                  <FilterChip key={tier} label={`${tier} ${tierLabel[tier]}`} count={tierCounts[tier]} active={tierFilter === tier} onClick={() => startTransition(() => setTierFilter(tier))} />
-                ))}
-              </div>
-              {hasBothSources && (
-                <div className="filter-group" role="group" aria-label="Filter by data source">
-                  <span className="filter-label">Source</span>
-                  <FilterChip label="All sources" count={sourceCounts.all} active={sourceFilter === 'all'} onClick={() => startTransition(() => setSourceFilter('all'))} />
-                  <FilterChip label="Owner capture" count={sourceCounts.captured} active={sourceFilter === 'captured'} onClick={() => startTransition(() => setSourceFilter('captured'))} />
-                  <FilterChip label="Offline fixture" count={sourceCounts.fixture} active={sourceFilter === 'fixture'} onClick={() => startTransition(() => setSourceFilter('fixture'))} />
-                </div>
-              )}
+            <p className="result-summary" aria-live="polite" aria-atomic="true">
+              {loading
+                ? 'Loading findings'
+                : `${view.count} ${view.count === 1 ? 'finding' : 'findings'} · ${view.identities} ${view.identities === 1 ? 'identity' : 'identities'}`}
+            </p>
+            <label className="register-search">
+              <Search size={14} aria-hidden="true" />
+              <span className="sr-only">Search findings</span>
+              <input
+                ref={searchRef}
+                type="search"
+                placeholder="Search findings"
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+              />
+              <kbd aria-hidden="true">⌘K</kbd>
+            </label>
+            {mobile ? (
+              <label className="mobile-sort-control">
+                Sort{' '}
+                <select
+                  aria-label="Sort findings"
+                  value={`${sort.key}:${sort.descending ? 'desc' : 'asc'}`}
+                  onChange={(event) => {
+                    const [key, direction] = event.target.value.split(':');
+                    startTransition(() =>
+                      setSort({
+                        key: key as SortKey,
+                        descending: direction === 'desc',
+                      }),
+                    );
+                  }}
+                >
+                  {(['risk', 'tier', 'identity', 'stage'] as const).flatMap(
+                    (key) => [
+                      <option key={`${key}:desc`} value={`${key}:desc`}>
+                        {key === 'risk'
+                          ? 'Risk'
+                          : key === 'tier'
+                            ? 'Tier'
+                            : key === 'identity'
+                              ? 'Identity'
+                              : 'Stage'}{' '}
+                        descending
+                      </option>,
+                      <option key={`${key}:asc`} value={`${key}:asc`}>
+                        {key === 'risk'
+                          ? 'Risk'
+                          : key === 'tier'
+                            ? 'Tier'
+                            : key === 'identity'
+                              ? 'Identity'
+                              : 'Stage'}{' '}
+                        ascending
+                      </option>,
+                    ],
+                  )}
+                </select>
+              </label>
+            ) : null}
+          </div>
+          {error ? (
+            <div className="capture-notice notice-error">
+              <p>
+                {error}{' '}
+                {latest
+                  ? `Showing last successful capture from ${shortTime(latest)} SGT.`
+                  : 'No capture is available.'}
+              </p>
+              <button
+                className="register-button"
+                onClick={() => void load()}
+                disabled={refreshing}
+              >
+                Retry
+              </button>
             </div>
-
-            <div className="data-table">
-              <table>
+          ) : stale ? (
+            <div className="capture-notice">
+              <p>
+                <span aria-hidden="true">▲</span> This capture is more than{' '}
+                {STALE_MS / 60_000} minutes old. Refresh before making a
+                decision.
+              </p>
+              <button
+                className="register-button"
+                onClick={() => void runCapture()}
+                disabled={refreshing}
+              >
+                Run capture
+              </button>
+            </div>
+          ) : null}
+          <div className="register-table-container" aria-busy={loading}>
+            {mobile ? (
+              <ul
+                className="register-cards"
+                aria-label="Access drift findings grouped by identity"
+              >
+                {loading
+                  ? Array.from({ length: 12 }, (_, index) => (
+                      <li className="register-skeleton-row" key={index}>
+                        <span className="skeleton" />
+                      </li>
+                    ))
+                  : groupRows}
+              </ul>
+            ) : (
+              <table
+                className={`register-table${view.count > 200 ? ' windowed-table' : ''}`}
+              >
+                <caption className="sr-only">
+                  Access drift findings grouped by identity
+                </caption>
+                <colgroup>
+                  <col className="risk-column" />
+                  <col className="tier-column" />
+                  <col className="identity-column" />
+                  <col className="entitlement-column" />
+                  <col className="stage-column" />
+                  <col className="action-column" />
+                </colgroup>
                 <thead>
                   <tr>
-                    <SortableHeader label="Risk score" sortKey="score" sort={sort} onSort={setSortKey} />
-                    <SortableHeader label="Tier" sortKey="tier" sort={sort} onSort={setSortKey} />
-                    <SortableHeader label="Identity" sortKey="identity" sort={sort} onSort={setSortKey} />
-                    <SortableHeader label="System and entitlement" sortKey="system" sort={sort} onSort={setSortKey} />
-                    <SortableHeader label="Stage" sortKey="stage" sort={sort} onSort={setSortKey} />
-                    <th scope="col"><span className="sr-only">Action</span></th>
+                    <SortHeader
+                      label="Risk"
+                      sortKey="risk"
+                      sort={sort}
+                      onSort={changeSort}
+                    />
+                    <SortHeader
+                      label="Tier"
+                      sortKey="tier"
+                      sort={sort}
+                      onSort={changeSort}
+                    />
+                    <SortHeader
+                      label="Identity"
+                      sortKey="identity"
+                      sort={sort}
+                      onSort={changeSort}
+                    />
+                    <th scope="col">Entitlement</th>
+                    <SortHeader
+                      label="Stage"
+                      sortKey="stage"
+                      sort={sort}
+                      onSort={changeSort}
+                    />
+                    <th scope="col">
+                      <span className="sr-only">Actions</span>
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
-                  {deferredRows.length === 0 && (
-                    <tr>
-                      <td colSpan={6} className="empty-row">
-                        <div className="empty-state">
-                          <p className="font-semibold">No findings match the current filters.</p>
-                          <p className="muted text-xs">{tierFilter !== 'all' || sourceFilter !== 'all' ? 'Tier and source filters are both active.' : 'No findings are loaded.'}</p>
-                          {(tierFilter !== 'all' || sourceFilter !== 'all') && (
-                            <button type="button" className="outline-button" onClick={clearFilters}>Clear filters</button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  )}
-                  {deferredRows.map((finding) => (
-                    <FindingRow
-                      key={finding.finding_id}
-                      finding={finding}
-                      onOpen={() => navigate(`/finding/${finding.finding_id}`)}
-                    />
-                  ))}
+                  {loading
+                    ? Array.from({ length: 12 }, (_, index) => (
+                        <tr className="register-skeleton-row" key={index}>
+                          <td colSpan={6}>
+                            <span className="skeleton" />
+                          </td>
+                        </tr>
+                      ))
+                    : groupRows}
                 </tbody>
               </table>
-            </div>
-          </section>
-        </>
-      )}
-    </div>
-  );
-}
-
-function FilterChip({ label, count, active, onClick }: { label: string; count: number; active: boolean; onClick: () => void }) {
-  return (
-    <button type="button" className="filter-chip" aria-pressed={active} disabled={count === 0 && !active} onClick={onClick}>
-      {active && <Check size={11} aria-hidden="true" />}
-      {label} <span className="filter-chip-count">{count}</span>
-    </button>
-  );
-}
-
-const MetricsRule = memo(function MetricsRule({ metrics }: { metrics: Metrics }) {
-  const kpis = useMemo(() => buildKpis(metrics), [metrics]);
-  return (
-    <div className="summary-rule" aria-label="Governance metrics">
-      {kpis.map((kpi) => (
-        <div key={kpi.key} className={`summary-cell summary-cell-${kpi.state}${kpi.primary ? ' summary-cell-primary' : ''}`}>
-          <div className="summary-label">{kpi.label}</div>
-          <div className="summary-value">{kpi.value}</div>
-          <div className="summary-target">{kpi.caption}</div>
+            )}
+            {!loading && view.count === 0 ? (
+              <div className="register-empty">
+                <h2>
+                  {hasFilters
+                    ? `No findings match ${[tier !== 'all' ? `tier ${tier}` : '', source !== 'all' ? `source ${SOURCE_NAMES[source]}` : '', search.trim() ? `“${search.trim()}”` : ''].filter(Boolean).join(' and ')}`
+                    : error
+                      ? 'Capture unavailable.'
+                      : 'Queue is clear.'}
+                </h2>
+                <p>
+                  {hasFilters
+                    ? 'Clear filters to return to the full queue.'
+                    : error
+                      ? 'Retry the capture request to load the queue.'
+                      : `Last capture${latest ? ` at ${shortTime(latest)} SGT` : ''} found no drift.`}
+                </p>
+                <button
+                  className="register-button"
+                  onClick={
+                    hasFilters
+                      ? clearFilters
+                      : error
+                        ? () => void load()
+                        : () => void runCapture()
+                  }
+                >
+                  {hasFilters
+                    ? 'Clear filters'
+                    : error
+                      ? 'Retry'
+                      : 'Run capture'}
+                </button>
+              </div>
+            ) : null}
+          </div>
+        </section>
+      </div>
+      <footer className="register-footer">
+        <span>{view.captured ? 'Live capture' : 'Fixture'}</span>
+        <span>
+          {latest
+            ? `Last capture ${shortTime(latest)} SGT`
+            : 'Capture time unavailable'}
+        </span>
+        {isUnauthenticatedMode ? <span>Preview access</span> : null}
+        <span className="footer-shortcut">⌘K search</span>
+      </footer>
+      {pending || toast ? (
+        <div className={`register-toast${toast?.error ? ' toast-error' : ''}`}>
+          <p>
+            {pending
+              ? `${pending.label} scheduled for ${pending.finding.finding_id}. Sending after 8 seconds.`
+              : toast?.text}
+          </p>
+          {pending ? (
+            <button className="register-button" onClick={undo}>
+              Undo
+            </button>
+          ) : (
+            <button className="register-button" onClick={() => setToast(null)}>
+              Dismiss
+            </button>
+          )}
         </div>
-      ))}
+      ) : null}
+      {selected ? (
+        <Suspense
+          fallback={
+            <div className="panel-loading">Loading finding details…</div>
+          }
+        >
+          <DetailPanel
+            key={selected.finding_id}
+            finding={selected}
+            onClose={closeDetail}
+            onDecision={scheduleDecision}
+            busy={pending !== null || submitting}
+            pendingLabel={
+              pending?.finding.finding_id === selected.finding_id
+                ? pending.label
+                : null
+            }
+            onUndo={undo}
+            feedback={toast}
+            onDismiss={() => setToast(null)}
+          />
+        </Suspense>
+      ) : null}
     </div>
+  );
+}
+
+interface WindowedProps {
+  mobile: boolean;
+  groups: { identity: string; findings: Finding[] }[];
+  collapsed: Set<string>;
+  onToggle: (event: MouseEvent<HTMLButtonElement>) => void;
+  selectedId: string | null;
+  pendingId: string | null;
+  activate: (
+    event: MouseEvent<HTMLElement> | KeyboardEvent<HTMLElement>,
+  ) => void;
+  now: number;
+}
+/** Window only presentation for large queues. All records still participate in the single
+ * derivation above. Scroll position is an external store, never effect-derived React state. */
+const WindowedFindings = memo(function WindowedFindings({
+  mobile,
+  groups,
+  collapsed,
+  onToggle,
+  selectedId,
+  pendingId,
+  activate,
+  now,
+}: WindowedProps) {
+  const viewport = useSyncExternalStore(
+    subscribeScroll,
+    scrollSnapshot,
+    serverScrollSnapshot,
+  );
+  const [scrollY, width, height] = viewport.split(':').map(Number);
+  const [origin, setOrigin] = useState(250);
+  const bindSentinel = useCallback((node: HTMLElement | null) => {
+    if (node) setOrigin(node.getBoundingClientRect().top + window.scrollY);
+  }, []);
+  const rowHeight = mobile ? 140 : width < 1200 ? 54 : 44;
+  const start = Math.max(0, scrollY - origin - 600);
+  const end = scrollY - origin + height + 600;
+  let offset = 0;
+  let firstVisible = -1;
+  let lastVisibleEnd = 0;
+  const rendered: React.ReactNode[] = [];
+  for (const group of groups) {
+    if (group.findings.length > 1) {
+      const groupHeight = mobile ? 40 : 32;
+      if (offset + groupHeight >= start && offset <= end) {
+        if (firstVisible < 0) firstVisible = offset;
+        const button = (
+          <button
+            data-identity={group.identity}
+            onClick={onToggle}
+            aria-expanded={!collapsed.has(group.identity)}
+          >
+            <ChevronDown
+              size={14}
+              className={collapsed.has(group.identity) ? 'group-closed' : ''}
+              aria-hidden="true"
+            />
+            <span>{group.identity}</span>
+            <span className="group-count">
+              {group.findings.length} findings
+            </span>
+          </button>
+        );
+        rendered.push(
+          mobile ? (
+            <li className="identity-group" key={`group:${group.identity}`}>
+              {button}
+            </li>
+          ) : (
+            <tr className="identity-group" key={`group:${group.identity}`}>
+              <th colSpan={6} scope="rowgroup">
+                {button}
+              </th>
+            </tr>
+          ),
+        );
+        lastVisibleEnd = offset + groupHeight;
+      }
+      offset += groupHeight;
+      if (collapsed.has(group.identity)) continue;
+    }
+    for (const finding of group.findings) {
+      if (offset + rowHeight >= start && offset <= end) {
+        if (firstVisible < 0) firstVisible = offset;
+        const props = {
+          finding,
+          selected: finding.finding_id === selectedId,
+          pending: finding.finding_id === pendingId,
+          activate,
+          now,
+        };
+        rendered.push(
+          mobile ? (
+            <FindingCard key={finding.finding_id} {...props} />
+          ) : (
+            <FindingRow key={finding.finding_id} {...props} />
+          ),
+        );
+        lastVisibleEnd = offset + rowHeight;
+      }
+      offset += rowHeight;
+    }
+  }
+  const before = Math.max(0, firstVisible);
+  const after = Math.max(0, offset - lastVisibleEnd);
+  return mobile ? (
+    <>
+      <li
+        ref={bindSentinel}
+        aria-hidden="true"
+        className="virtual-spacer"
+        style={{ height: before }}
+      />
+      {rendered}
+      <li
+        aria-hidden="true"
+        className="virtual-spacer"
+        style={{ height: after }}
+      />
+    </>
+  ) : (
+    <>
+      <tr
+        ref={bindSentinel}
+        aria-hidden="true"
+        className="virtual-spacer"
+        style={{ height: before }}
+      >
+        <td colSpan={6} />
+      </tr>
+      {rendered}
+      <tr
+        aria-hidden="true"
+        className="virtual-spacer"
+        style={{ height: after }}
+      >
+        <td colSpan={6} />
+      </tr>
+    </>
   );
 });
 
-function SortableHeader({ label, sortKey, sort, onSort }: { label: string; sortKey: SortKey; sort: { key: SortKey; descending: boolean }; onSort: (key: SortKey) => void }) {
-  const active = sort.key === sortKey;
-  const ariaSort: 'ascending' | 'descending' | 'none' = active ? (sort.descending ? 'descending' : 'ascending') : 'none';
-  return (
-    <th scope="col" aria-sort={ariaSort}>
-      <button type="button" className="sort-button" onClick={() => onSort(sortKey)} aria-label={`Sort by ${label}${active ? `, currently ${ariaSort}` : ''}`}>
-        {label} <ArrowUpDown size={12} aria-hidden="true" />
-      </button>
-    </th>
+const FindingGroupRows = memo(function FindingGroupRows({
+  mobile = false,
+  identity,
+  findings,
+  collapsed,
+  onToggle,
+  selectedId,
+  pendingId,
+  activate,
+  now,
+}: {
+  mobile?: boolean;
+  identity: string;
+  findings: Finding[];
+  collapsed: boolean;
+  onToggle: (event: MouseEvent<HTMLButtonElement>) => void;
+  selectedId: string | null;
+  pendingId: string | null;
+  activate: (
+    event: MouseEvent<HTMLElement> | KeyboardEvent<HTMLElement>,
+  ) => void;
+  now: number;
+}) {
+  const groupButton = (
+    <button
+      data-identity={identity}
+      onClick={onToggle}
+      aria-expanded={!collapsed}
+    >
+      <ChevronDown
+        size={14}
+        className={collapsed ? 'group-closed' : ''}
+        aria-hidden="true"
+      />
+      <span>{identity}</span>
+      <span className="group-count">{findings.length} findings</span>
+    </button>
   );
-}
-
-const FindingRow = memo(function FindingRow({ finding, onOpen }: { finding: Finding; onOpen: () => void }) {
-  const band = riskBand(finding.score.total);
   return (
-    <tr>
-      <td data-label="Risk score">
-        <div className={`risk-cell risk-band-${band.key}`}>
-          <span className="risk-bar-track"><span className="risk-bar-fill" style={{ height: `${Math.max(4, finding.score.total)}%` }} /></span>
-          <span className="risk-score-group">
-            <span className="risk-score">{finding.score.total.toFixed(0)}</span>
-            <span className="risk-band-label">/ 100 · {band.label}</span>
+    <>
+      {findings.length > 1 ? (
+        mobile ? (
+          <li className="identity-group">{groupButton}</li>
+        ) : (
+          <tr className="identity-group">
+            <th colSpan={6} scope="rowgroup">
+              {groupButton}
+            </th>
+          </tr>
+        )
+      ) : null}
+      {collapsed && findings.length > 1
+        ? null
+        : findings.map((finding) =>
+            mobile ? (
+              <FindingCard
+                key={finding.finding_id}
+                finding={finding}
+                selected={finding.finding_id === selectedId}
+                pending={finding.finding_id === pendingId}
+                activate={activate}
+                now={now}
+              />
+            ) : (
+              <FindingRow
+                key={finding.finding_id}
+                finding={finding}
+                selected={finding.finding_id === selectedId}
+                pending={finding.finding_id === pendingId}
+                activate={activate}
+                now={now}
+              />
+            ),
+          )}
+    </>
+  );
+});
+const FindingRow = memo(function FindingRow({
+  finding,
+  selected,
+  pending,
+  activate,
+  now,
+}: {
+  finding: Finding;
+  selected: boolean;
+  pending: boolean;
+  activate: (
+    event: MouseEvent<HTMLElement> | KeyboardEvent<HTMLElement>,
+  ) => void;
+  now: number;
+}) {
+  const band = riskBand(finding.score.total);
+  const disabled = finding.entitlement.raw.unavailable === true;
+  const time = captureTime(finding);
+  const stale = time !== null && now - time > STALE_MS;
+  return (
+    <tr
+      className={`finding-row risk-${band.key}`}
+      data-finding-id={finding.finding_id}
+      data-selected={selected}
+      data-disabled={disabled}
+      tabIndex={disabled ? -1 : 0}
+      onClick={activate}
+      onKeyDown={activate}
+      onMouseEnter={preloadDetail}
+      onFocus={preloadDetail}
+      aria-label={`${finding.finding_id} for ${finding.entitlement.identity_id}${disabled ? ', unavailable' : ''}`}
+    >
+      <td className="finding-risk">
+        <span className="risk-rail" aria-hidden="true">
+          {Array.from({ length: band.ticks }, (_, index) => (
+            <i key={index} />
+          ))}
+        </span>
+        <div className="risk-value">
+          <strong>{Math.round(finding.score.total)}</strong>
+          <span>{band.key}</span>
+          <span className={`tier-badge tier-${finding.tier} inline-tier`}>
+            {finding.tier}
           </span>
         </div>
       </td>
-      <td data-label="Tier">
-        <span className={`tier-badge tier-${finding.tier}`}>{finding.tier} {tierLabel[finding.tier]}</span>
-        {finding.observe_only && <span className="tier-badge tier-T0" style={{ marginLeft: 6 }}>Non-revocable</span>}
-      </td>
-      <td data-label="Identity">
-        <span className="identity-name">{finding.entitlement.identity_id}</span>
-        <div className="muted mt-1 font-mono text-xs">{finding.finding_id}</div>
-      </td>
-      <td data-label="System and entitlement">
-        <div className="entitlement-line">
-          <span className="system-name">{finding.entitlement.system}</span>
-          <code>{finding.entitlement.scope}</code>
-          <ProvenanceBadge finding={finding} />
-        </div>
-        <div className="muted mt-1 max-w-md truncate font-mono text-xs" title={resourceLabel(finding.entitlement.resource)}>{resourceLabel(finding.entitlement.resource)}</div>
-      </td>
-      <td data-label="Stage">
-        <span className="stage-name">{finding.current_stage}</span>
-        <div className="muted mt-1 text-xs">{finding.stage_status}</div>
-      </td>
-      <td className="text-right">
-        <button
-          type="button"
-          className="outline-button review-button"
-          onClick={onOpen}
-          aria-label={`Review finding ${finding.finding_id} — ${finding.entitlement.identity_id} on ${finding.entitlement.system}`}
+      <td className="finding-tier">
+        <span
+          className={`tier-badge tier-${finding.tier}`}
+          title={TIER_NAMES[finding.tier]}
         >
-          Review
+          {finding.tier}
+        </span>
+      </td>
+      <td className="finding-identity">{finding.entitlement.identity_id}</td>
+      <td className="finding-entitlement" title={entitlementLabel(finding)}>
+        {entitlementLabel(finding)}
+        {stale ? (
+          <span
+            className="row-stale"
+            title={`Captured ${time ? absoluteTime(time) : ''}`}
+          >
+            <span aria-hidden="true">▲</span> Stale
+          </span>
+        ) : null}
+      </td>
+      <td className="finding-stage">
+        <span>
+          {pending
+            ? 'Decision scheduled'
+            : disabled
+              ? 'Evidence unavailable'
+              : stageLabel(finding)}
+        </span>
+        <span className="pipeline-position">{stagePosition(finding)}/5</span>
+      </td>
+      <td className="finding-action">
+        <button
+          className="register-icon-button"
+          tabIndex={disabled ? -1 : 0}
+          disabled={disabled}
+          aria-label={`Review ${finding.finding_id} for ${finding.entitlement.identity_id}`}
+        >
+          {disabled ? (
+            <LockKeyhole size={16} aria-hidden="true" />
+          ) : (
+            <ArrowUpRight size={16} aria-hidden="true" />
+          )}
         </button>
       </td>
     </tr>
   );
 });
-
-function DashboardSkeleton() {
-  return <div aria-label="Loading dashboard" className="dashboard-skeleton"><div /><div /></div>;
+const FindingCard = memo(function FindingCard({
+  finding,
+  selected,
+  pending,
+  activate,
+  now,
+}: {
+  finding: Finding;
+  selected: boolean;
+  pending: boolean;
+  activate: (
+    event: MouseEvent<HTMLElement> | KeyboardEvent<HTMLElement>,
+  ) => void;
+  now: number;
+}) {
+  const band = riskBand(finding.score.total);
+  const disabled = finding.entitlement.raw.unavailable === true;
+  const time = captureTime(finding);
+  const stale = time !== null && now - time > STALE_MS;
+  return (
+    <li
+      className={`finding-row risk-${band.key}`}
+      data-finding-id={finding.finding_id}
+      data-selected={selected}
+      data-disabled={disabled}
+      tabIndex={disabled ? -1 : 0}
+      onClick={activate}
+      onKeyDown={activate}
+      onMouseEnter={preloadDetail}
+      onFocus={preloadDetail}
+      aria-label={`${finding.finding_id} for ${finding.entitlement.identity_id}${disabled ? ', unavailable' : ''}`}
+    >
+      <div className="finding-risk">
+        <span className="risk-rail" aria-hidden="true">
+          {Array.from({ length: band.ticks }, (_, index) => (
+            <i key={index} />
+          ))}
+        </span>
+        <div className="risk-value">
+          <strong>{Math.round(finding.score.total)}</strong>
+          <span>{band.key}</span>
+          <span className={`tier-badge tier-${finding.tier} inline-tier`}>
+            {finding.tier}
+          </span>
+        </div>
+      </div>
+      <div className="finding-tier">
+        <span
+          className={`tier-badge tier-${finding.tier}`}
+          title={TIER_NAMES[finding.tier]}
+        >
+          {finding.tier}
+        </span>
+      </div>
+      <div className="finding-identity">{finding.entitlement.identity_id}</div>
+      <div className="finding-entitlement" title={entitlementLabel(finding)}>
+        {entitlementLabel(finding)}
+        {stale ? (
+          <span
+            className="row-stale"
+            title={`Captured ${time ? absoluteTime(time) : ''}`}
+          >
+            <span aria-hidden="true">▲</span> Stale
+          </span>
+        ) : null}
+      </div>
+      <div className="finding-stage">
+        <span>
+          {pending
+            ? 'Decision scheduled'
+            : disabled
+              ? 'Evidence unavailable'
+              : stageLabel(finding)}
+        </span>
+        <span className="pipeline-position">{stagePosition(finding)}/5</span>
+      </div>
+      <div className="finding-action">
+        <button
+          className="register-icon-button"
+          tabIndex={disabled ? -1 : 0}
+          disabled={disabled}
+          aria-label={`Review ${finding.finding_id} for ${finding.entitlement.identity_id}`}
+        >
+          {disabled ? (
+            <LockKeyhole size={16} aria-hidden="true" />
+          ) : (
+            <ArrowUpRight size={16} aria-hidden="true" />
+          )}
+        </button>
+      </div>
+    </li>
+  );
+});
+function SortHeader({
+  label,
+  sortKey,
+  sort,
+  onSort,
+}: {
+  label: string;
+  sortKey: SortKey;
+  sort: Sort;
+  onSort: (key: SortKey) => void;
+}) {
+  return (
+    <th
+      scope="col"
+      className={sortKey === 'tier' ? 'finding-tier' : ''}
+      aria-sort={
+        sort.key === sortKey
+          ? sort.descending
+            ? 'descending'
+            : 'ascending'
+          : 'none'
+      }
+    >
+      <button className="register-sort" onClick={() => onSort(sortKey)}>
+        {label}
+        <ArrowUpDown size={12} aria-hidden="true" />
+      </button>
+    </th>
+  );
 }

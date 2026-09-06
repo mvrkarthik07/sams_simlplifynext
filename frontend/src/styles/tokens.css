@@ -1,111 +1,59 @@
-/* ---------------------------------------------------------------------- */
-/* Primitive layer — raw scale values. Nothing outside this file may      */
-/* reference these directly; components consume semantic tokens below.   */
-/* ---------------------------------------------------------------------- */
+/* Primitives: all raw color values live here. */
 :root {
-  --paper: #FBFBFA;
-  --paper-sunken: #F2F3F1;
-  --ink: #16181A;
-  --ink-muted: #5A6067;
-  --rule: #E1E3E0;
-  --link: #1B4DB1;
-  --focus: #1B4DB1;
-
-  /* Warm severity ramp (T0 -> T3): one ordered family, not arbitrary hues.
-     Contrast-checked >=4.5:1 against both --paper and --paper-sunken. */
-  --sev-0: #5B6167;
-  --sev-1: #8E670B;
-  --sev-2: #9C480D;
-  --sev-3: #A7271B;
-
-  /* Connection/credential status — distinct from the severity ramp even
-     where a hue is shared, per the token audit (m16/08). */
-  --status-live: #1F6F4A;
-  --status-stale: #8E670B;
-  --status-blocked: #A7271B;
-  --status-not-wired: var(--ink-muted);
-
-  --font-ui: 'Public Sans', system-ui, sans-serif;
-  --font-identifier: 'IBM Plex Mono', ui-monospace, monospace;
-  --row-height: 40px;
-  --radius: 2px;
+  --g-0: #0E0F10; --g-1: #151618; --g-2: #1C1E21; --g-3: #26292D; --g-4: #3A3E44; --g-7: #8B9096; --g-9: #E6E8EA;
+  --green-500: #3DBF7A; --amber-500: #E0A030; --red-500: #E5484D; --blue-500: #4C8DFF;
+  --g-secondary: #9BA0A6; --g-disabled: #969BA1; --g-tier-1: #ADB2B8; --g-tier-2: #C9CDD2;
+  --red-text: #F4777C; --g-boundary: #737980;
+  --warm-base: #F7F6F3; --warm-raised: #EFEEEA; --warm-overlay: #E7E5E0; --warm-border: #D3D1CB;
+  --warm-ink: #242628; --warm-secondary: #575B61; --warm-disabled: #585B60;
+  --warm-tier-1: #505358; --warm-tier-2: #393C40; --warm-boundary: #777A7E;
+  --green-700: #176F45; --amber-700: #86580C; --red-700: #B52D37; --blue-700: #245FC0;
+  --shadow-ink: #000000;
+  --font-ui: 'IBM Plex Sans', sans-serif; --font-identifier: 'IBM Plex Mono', monospace;
+  --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px; --space-6: 24px; --space-8: 32px; --space-12: 48px;
+  --radius-control: 4px; --radius-container: 6px; --radius-row: 0;
+  --type-meta: 11px; --type-caption: 12px; --type-dense: 13px; --type-body: 14px; --type-section: 16px; --type-title: 20px;
 }
-
+/* Semantic: warm light theme shares the same roles as graphite dark. */
+:root, [data-theme='light'] {
+  color-scheme: light;
+  --surface-base: var(--warm-base); --surface-raised: var(--warm-raised); --surface-overlay: var(--warm-overlay);
+  --text-primary: var(--warm-ink); --text-secondary: var(--warm-secondary); --text-disabled: var(--warm-disabled);
+  --border-subtle: var(--warm-border); --border-strong: var(--warm-boundary);
+  --status-healthy: var(--green-700); --status-stale: var(--amber-700); --status-error: var(--red-700);
+  --risk-low: var(--warm-secondary); --risk-elevated: var(--amber-700); --risk-high: var(--red-700); --risk-critical: var(--red-700);
+  --tier-0: var(--warm-disabled); --tier-1: var(--warm-tier-1); --tier-2: var(--warm-tier-2); --tier-3: var(--warm-ink);
+  --ring: var(--blue-700); --link: var(--blue-700); --selection-tint: var(--blue-500);
+}
 [data-theme='dark'] {
-  --paper: #15191B;
-  --paper-sunken: #1D2326;
-  --ink: #F1F4F3;
-  --ink-muted: #AAB4B8;
-  --rule: #374146;
-  --link: #9CB8FF;
-  --focus: #A8C0FF;
-
-  --sev-0: #B0B8BF;
-  --sev-1: #E7BB55;
-  --sev-2: #EC9151;
-  --sev-3: #E87C73;
-
-  --status-live: #72D1A3;
-  --status-stale: #E7BB55;
-  --status-blocked: #E87C73;
-  --status-not-wired: var(--ink-muted);
+  color-scheme: dark;
+  --surface-base: var(--g-0); --surface-raised: var(--g-1); --surface-overlay: var(--g-2);
+  --text-primary: var(--g-9); --text-secondary: var(--g-secondary); --text-disabled: var(--g-disabled);
+  --border-subtle: var(--g-3); --border-strong: var(--g-boundary);
+  --status-healthy: var(--green-500); --status-stale: var(--amber-500); --status-error: var(--red-text);
+  --risk-low: var(--g-7); --risk-elevated: var(--amber-500); --risk-high: var(--red-500); --risk-critical: var(--red-500);
+  --tier-0: var(--g-disabled); --tier-1: var(--g-tier-1); --tier-2: var(--g-tier-2); --tier-3: var(--g-9);
+  --ring: var(--blue-500); --link: var(--blue-500);
 }
-
-/* ---------------------------------------------------------------------- */
-/* Semantic layer — purpose aliases. Components reference these, never    */
-/* the primitives above.                                                  */
-/* ---------------------------------------------------------------------- */
-:root, [data-theme='dark'] {
-  --color-primary: var(--ink);
-  --color-on-primary: var(--paper);
-  --color-secondary: var(--paper-sunken);
-  --color-accent: var(--status-live);
-  --color-on-accent: var(--paper);
-  --color-background: var(--paper);
-  --color-foreground: var(--ink);
-  --color-card: var(--paper);
-  --color-card-foreground: var(--ink);
-  --color-muted: var(--paper-sunken);
-  --color-muted-foreground: var(--ink-muted);
-  --color-border: var(--rule);
-  --color-destructive: var(--sev-3);
-  --color-warning: var(--sev-2);
-  --color-ring: var(--focus);
-
-  /* Risk bands — the score-side vocabulary ("49 / 100 - elevated"). */
-  --risk-low: var(--sev-0);
-  --risk-elevated: var(--sev-1);
-  --risk-high: var(--sev-2);
-  --risk-critical: var(--sev-3);
-
-  /* Policy tiers — the plan-side vocabulary (T0-T3 badges). Same ramp,
-     named separately because the two surfaces can diverge later. */
-  --tier-0: var(--sev-0);
-  --tier-1: var(--sev-1);
-  --tier-2: var(--sev-2);
-  --tier-3: var(--sev-3);
-
-  /* Table row component tokens. */
-  --row-bg-default: transparent;
-  --row-bg-hover: var(--paper-sunken);
+/* Component layer, including all six row states. */
+:root, [data-theme] {
+  --row-bg-default: var(--surface-raised); --row-bg-hover: var(--surface-overlay);
+  --row-bg-focus: var(--surface-raised); --row-focus-outline: var(--ring);
+  --row-bg-selected: color-mix(in srgb, var(--selection-tint) 10%, var(--surface-raised));
+  --row-bg-selected-hover: color-mix(in srgb, var(--selection-tint) 14%, var(--surface-overlay));
+  --row-bg-disabled: var(--surface-base); --row-text-disabled: var(--text-disabled);
+  --row-selection-edge: var(--ring); --row-height: 44px;
+  --panel-shadow: 0 1px 0 color-mix(in srgb, var(--shadow-ink) 40%, transparent);
+  --panel-scrim: color-mix(in srgb, var(--surface-base) 32%, transparent);
+  --skeleton-fill: color-mix(in srgb, var(--text-secondary) 14%, var(--surface-raised));
+  /* Compatibility aliases for the other existing routes. */
+  --paper: var(--surface-base); --paper-sunken: var(--surface-raised); --ink: var(--text-primary); --ink-muted: var(--text-secondary); --rule: var(--border-subtle); --focus: var(--ring); --radius: var(--radius-control);
+  --status-live: var(--status-healthy); --status-blocked: var(--status-error); --status-not-wired: var(--text-disabled);
+  --sev-0: var(--tier-0); --sev-1: var(--tier-1); --sev-2: var(--tier-2); --sev-3: var(--status-error);
+  --color-primary: var(--text-primary); --color-on-primary: var(--surface-base); --color-secondary: var(--surface-raised); --color-accent: var(--status-healthy); --color-on-accent: var(--surface-base);
+  --color-background: var(--surface-base); --color-foreground: var(--text-primary); --color-card: var(--surface-raised); --color-card-foreground: var(--text-primary); --color-muted: var(--surface-overlay); --color-muted-foreground: var(--text-secondary); --color-border: var(--border-subtle); --color-destructive: var(--status-error); --color-warning: var(--status-stale); --color-ring: var(--ring);
 }
-
-body {
-  background: var(--color-background);
-  color: var(--color-foreground);
-  font-family: var(--font-ui);
-  margin: 0;
-}
-
-/* Reduced motion preference */
-@media (prefers-reduced-motion: reduce) {
-  *, ::before, ::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
-    scroll-behavior: auto !important;
-  }
-}
+body { background: var(--surface-base); color: var(--text-primary); font-family: var(--font-ui); margin: 0; font-feature-settings: 'tnum' 1, 'ss01' 1; }
 
 .preview-banner {
   background: var(--ink);

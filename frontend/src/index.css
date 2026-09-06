@@ -1,5 +1,6 @@
-@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Public+Sans:wght@400;500;600;700&display=swap');
+@import './styles/fonts.css';
 @import './styles/tokens.css';
+@import './styles/register.css';
 
 @tailwind base;
 @tailwind components;

@@ -36,6 +36,7 @@ export class DeadboltApiError extends Error {
 const configuredApiUrl = import.meta.env.VITE_API_BASE as string | undefined;
 const API_BASE_URL = (configuredApiUrl || '/api').replace(/\/$/, '');
 const REQUEST_TIMEOUT_MS = 8000;
+export const DATA_CHANGED_EVENT = 'deadbolt:data-changed';
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null;
@@ -58,6 +59,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       const token = getAccessToken();
       const response = await fetch(`${API_BASE_URL}${path}`, {
         ...init,
+        cache: 'no-store',
         signal: controller.signal,
         headers: {
           'Content-Type': 'application/json',
@@ -99,6 +101,10 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 const id = (findingId: string) => encodeURIComponent(findingId);
 
+function announceDataChanged(): void {
+  if (typeof window !== 'undefined') window.dispatchEvent(new Event(DATA_CHANGED_EVENT));
+}
+
 const remoteApi = {
   getFindings: (): Promise<Finding[]> => request<Finding[]>('/findings'),
   getFinding: async (findingId: string): Promise<Finding | undefined> => {
@@ -119,26 +125,39 @@ const remoteApi = {
   },
   getAuditLog: (): Promise<AuditLogEntry[]> => request<AuditLogEntry[]>('/audit'),
   getMetrics: (): Promise<Metrics> => request<Metrics>('/metrics'),
-  decideApproval: (
+  decideApproval: async (
     findingId: string,
     action: string,
     approver: string,
     reason?: string,
-  ): Promise<Finding> => request<Finding>(`/findings/${id(findingId)}/decision`, {
-    method: 'POST',
-    body: JSON.stringify({ action, approver, reason: reason || '' }),
-  }),
-  rerunDriftEngine: (findingId: string): Promise<string | null> =>
-    request<string | null>(`/findings/${id(findingId)}/rerun`, { method: 'POST' }),
-  executeRollback: (findingId: string): Promise<Finding> =>
-    request<Finding>(`/findings/${id(findingId)}/rollback`, { method: 'POST' }),
+  ): Promise<Finding> => {
+    const result = await request<Finding>(`/findings/${id(findingId)}/decision`, {
+      method: 'POST',
+      body: JSON.stringify({ action, approver, reason: reason || '' }),
+    });
+    announceDataChanged();
+    return result;
+  },
+  rerunDriftEngine: async (findingId: string): Promise<string | null> => {
+    const result = await request<string | null>(`/findings/${id(findingId)}/rerun`, { method: 'POST' });
+    announceDataChanged();
+    return result;
+  },
+  executeRollback: async (findingId: string): Promise<Finding> => {
+    const result = await request<Finding>(`/findings/${id(findingId)}/rollback`, { method: 'POST' });
+    announceDataChanged();
+    return result;
+  },
   getConnections: (): Promise<ConnectionSummary[]> => request<ConnectionSummary[]>('/connections'),
   saveConnection: (provider: ConnectionProvider, config: Record<string, unknown>): Promise<ConnectionSummary> =>
     request<ConnectionSummary>(`/connections/${provider}`, { method: 'POST', body: JSON.stringify(config) }),
   testConnection: (provider: ConnectionProvider): Promise<ConnectionTestResult> =>
     request<ConnectionTestResult>(`/connections/${provider}`, { method: 'POST', body: JSON.stringify({ action: 'test' }) }),
-  scanConnection: (provider: ConnectionProvider): Promise<ConnectionScanResult> =>
-    request<ConnectionScanResult>(`/connections/${provider}`, { method: 'POST', body: JSON.stringify({ action: 'scan' }) }),
+  scanConnection: async (provider: ConnectionProvider): Promise<ConnectionScanResult> => {
+    const result = await request<ConnectionScanResult>(`/connections/${provider}`, { method: 'POST', body: JSON.stringify({ action: 'scan' }) });
+    announceDataChanged();
+    return result;
+  },
   removeConnection: (provider: ConnectionProvider): Promise<ConnectionSummary> =>
     request<ConnectionSummary>(`/connections/${provider}`, { method: 'POST', body: JSON.stringify({ action: 'disconnect' }) }),
 };
