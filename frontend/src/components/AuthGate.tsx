@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import type { FormEvent } from 'react';
 import { LockKeyhole } from 'lucide-react';
-import { authRequired, confirmSignUp, getSession, isAuthConfigured, isDemoMode, signIn, signUp } from '../lib/auth';
+import { authRequired, confirmSignUp, getSession, isAuthConfigured, isUnauthenticatedMode, signIn, signUp } from '../lib/auth';
 
 type AuthMode = 'signin' | 'signup' | 'confirm';
 
@@ -21,7 +21,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
     }
     return (
       <>
-        {isDemoMode && <div className="demo-banner">Demo mode — configure Cognito for authenticated access</div>}
+        {isUnauthenticatedMode && <div className="preview-banner">Preview access — configure Cognito for authenticated access</div>}
         {children}
       </>
     );

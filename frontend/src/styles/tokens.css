@@ -107,7 +107,7 @@ body {
   }
 }
 
-.demo-banner {
+.preview-banner {
   background: var(--ink);
   color: var(--paper);
   font: 12px var(--font-identifier);

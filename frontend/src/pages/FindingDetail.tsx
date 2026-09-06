@@ -88,7 +88,7 @@ export function FindingDetail() {
     setActionNotice(null);
     setError(null);
     try {
-      const updated = await api.decideApproval(id, action, 'Demo Approver', action === 'Keep, with reason' ? 'Need it for deployment' : undefined);
+      const updated = await api.decideApproval(id, action, 'Access Reviewer', action === 'Keep, with reason' ? 'Required for deployment' : undefined);
       setFinding(updated);
       if (action === 'Reduce further') {
         const newPlan = await api.getPlan(id);

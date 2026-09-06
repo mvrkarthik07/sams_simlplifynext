@@ -31,6 +31,6 @@ and retries network failures once. Backend responses must use the stable \`data\
 
 ## Core Metaphors Implemented
 - **Pipeline View**: The finding detail screen shows drift as a CI/CD-style pipeline (Detected → Scored → Planned → Approval → Executing → Verified/Rolled back).
-- **Deterministic Drift Demo**: Clicking "Re-run Engine" in the Finding Detail screen simulates the "same input, same plan, every time" demo beat by showing the exact same plan hash being produced.
+- **Deterministic Drift Review**: Clicking "Re-run Engine" in the Finding Detail screen simulates the "same input, same plan, every time" workflow by showing the exact same plan hash being produced.
 - **Audit Trail**: The \`/audit\` route provides a dense, terminal-style view representing the OpenTelemetry trace logs. 
 - **Security-Ops Dashboard**: High contrast, dark-mode first design adhering to the provided design system tokens.

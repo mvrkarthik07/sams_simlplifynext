@@ -22,7 +22,7 @@ const userPoolId = String(import.meta.env.VITE_COGNITO_USER_POOL_ID ?? '');
 const clientId = String(import.meta.env.VITE_COGNITO_CLIENT_ID ?? '');
 
 export const isAuthConfigured = authRequired && Boolean(region && userPoolId && clientId);
-export const isDemoMode = !authRequired;
+export const isUnauthenticatedMode = !authRequired;
 
 const sessionStorageAvailable = (): boolean => typeof window !== 'undefined' && Boolean(window.sessionStorage);
 
