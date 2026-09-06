@@ -27,6 +27,7 @@ _Jitter = Callable[[], float]
 _NEXT_LINK = re.compile(r"<([^>]+)>;\s*rel=\"([^\"]+)\"")
 _HTTP_ERROR = 400
 _HTTP_NOT_FOUND = 404
+_HTTP_NO_CONTENT = 204
 
 
 def _text(value: object, default: str = "") -> str:
@@ -202,6 +203,8 @@ class GitHubProvider:
 
     @staticmethod
     def _object(response: httpx.Response, operation: str) -> Mapping[str, object]:
+        if response.status_code == _HTTP_NO_CONTENT or not response.content:
+            return {}
         try:
             payload = response.json()
         except ValueError as exc:

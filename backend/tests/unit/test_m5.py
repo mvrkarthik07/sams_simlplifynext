@@ -179,6 +179,19 @@ def test_github_iam_inventory_and_membership_operations() -> None:
 
 @pytest.mark.m5
 @respx.mock
+def test_github_repository_write_accepts_empty_201_and_204_responses() -> None:
+    base = "https://api.github.test"
+    respx.put(f"{base}/repos/acme/demo/collaborators/alice").mock(
+        side_effect=[httpx.Response(201), httpx.Response(204)]
+    )
+    provider = GitHubProvider("acme", "token", base_url=base)
+
+    assert provider.set_repository_access("acme", "demo", "alice", "pull") == {}
+    assert provider.set_repository_access("acme", "demo", "alice", "pull") == {}
+
+
+@pytest.mark.m5
+@respx.mock
 def test_github_snapshot_discovers_all_visible_repositories_when_unbounded() -> None:
     base = "https://api.github.test"
     respx.get(f"{base}/orgs/acme/members").mock(
