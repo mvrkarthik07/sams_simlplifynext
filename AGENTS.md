@@ -702,3 +702,39 @@ npx cdk destroy DeadboltStack --profile hackathon --region us-east-1 --force
 
 Object Lock buckets and the CDK bootstrap resources may require separate cleanup or retention
 checks. Never destroy unrelated resources in the hackathon account.
+
+### 6.12 Entitlement register UI completion — 2026-09-07
+
+The entitlement-register presentation refinement is complete on branch
+`feat/entitlement-register-polish` in commits `e1ce071` and `d7f975a`. The commits are ready to
+merge into `main`; they have not changed backend contracts or provider behavior. The implementation
+is a React 19.2/Vite 8 SPA with Tailwind 3.4 configuration; it is not a Next.js application.
+
+The register now has self-hosted IBM Plex Sans/Mono fonts, graphite dark and warm-neutral light
+themes, primitive → semantic → component tokens, accessible risk rails with tick-mark cues,
+responsive sidebar/table/card layouts, grouped findings, native labeled filters, stale/failed/empty
+states, a focus-managed detail sheet, optimistic decision feedback with an eight-second Undo window,
+and a separate local 12-finding rehearsal fixture. Queues above 200 findings use viewport windowing;
+derivation still traverses the complete source array once for filtering, sorting, grouping, and counts.
+The fixture and browser scripts are local-only and do not make AWS or provider calls.
+
+Verification for this work:
+
+```text
+make gate-m12r && make guard              passed
+138 non-live backend tests                passed
+coverage                                  85.12%
+frontend lint, typecheck, production build passed
+axe at 375/768/1024/1440 in both themes     0 violations
+filter interaction, 12 findings             1 commit, 32.9ms visual feedback
+filter interaction, 5,000 findings          1 commit, 49.2ms visual feedback
+actual Chromium 200% zoom                   CSS width 720, no overflow
+```
+
+The detailed file list, contrast matrix, screenshots, generated-default checklist, state tests,
+and reproduction commands are in `backend/docs/REGISTER_REVIEW.md`. The measured minimum text
+contrast is 4.79:1 and the minimum tested UI boundary contrast is 3.03:1. The feature branch was
+merged/pushed only after preserving unrelated existing working-tree edits; those edits remain
+uncommitted and must not be swept into later commits without review. The hosted dashboard and API
+still require the documented authenticated redeploy procedure before these local frontend changes
+appear in AWS.
