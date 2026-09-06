@@ -9,6 +9,7 @@ import {
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { ApprovalCard } from '../components/ApprovalCard';
+import { ProvenanceBadge } from '../components/ProvenanceBadge';
 
 const STAGES: PipelineStage[] = ['Detected', 'Scored', 'Planned', 'Approval', 'Executing', 'Verified'];
 
@@ -20,60 +21,115 @@ export function FindingDetail() {
   const [isRerunning, setIsRerunning] = useState(false);
   const [previousHash, setPreviousHash] = useState<string | null>(null);
   const [isHashMatched, setIsHashMatched] = useState<boolean | null>(null);
+  const [previousPlanId, setPreviousPlanId] = useState<string | null>(null);
+  const [rerunPlanId, setRerunPlanId] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [actionNotice, setActionNotice] = useState<string | null>(null);
+  const [error, setError] = useState<{ code?: string; message: string } | null>(null);
 
   useEffect(() => {
     if (id) {
-      api.getFinding(id).then(setFinding);
-      api.getPlan(id).then(setPlan);
+      Promise.all([api.getFinding(id), api.getPlan(id)])
+        .then(([nextFinding, nextPlan]) => {
+          setFinding(nextFinding);
+          setPlan(nextPlan);
+          setError(null);
+        })
+        .catch((reason: unknown) => {
+          setError({
+            code: typeof reason === 'object' && reason !== null && 'code' in reason
+              ? String(reason.code)
+              : undefined,
+            message: reason instanceof Error ? reason.message : 'Unable to load this finding.',
+          });
+        });
     }
   }, [id]);
 
-  if (!finding) return <div className="p-8 font-mono text-muted-foreground animate-pulse">Loading finding...</div>;
+  if (error && !finding) {
+    return (
+      <div className="p-8 space-y-3">
+        <p className="font-semibold">Finding data could not be loaded.</p>
+        <p className="font-mono text-xs text-destructive">{error.code ? `${error.code}: ` : ''}{error.message}</p>
+        <button type="button" onClick={() => window.location.reload()} className="rounded bg-secondary px-3 py-1.5 text-xs font-semibold">
+          Retry
+        </button>
+      </div>
+    );
+  }
+  if (!finding) return <div className="p-8 font-mono text-muted-foreground animate-pulse" aria-label="Loading finding">Loading finding...</div>;
 
   const handleRerun = async () => {
     if (!plan || !id) return;
     setIsRerunning(true);
-    setPreviousHash(plan.hash);
+    const oldHash = plan.hash;
+    const oldPlanId = plan.plan_id;
+    setPreviousHash(oldHash);
+    setPreviousPlanId(oldPlanId);
     setIsHashMatched(null);
-    
-    // simulate engine rerun delay
-    await new Promise(r => setTimeout(r, 1500));
-    const newHash = await api.rerunDriftEngine(id);
-    
-    setIsRerunning(false);
-    setIsHashMatched(newHash === previousHash);
+    try {
+      const newHash = await api.rerunDriftEngine(id);
+      const newPlan = await api.getPlan(id);
+      if (newPlan) {
+        setPlan(newPlan);
+        setRerunPlanId(newPlan.plan_id);
+      }
+      setIsHashMatched(newHash === oldHash);
+    } catch (reason) {
+      setError({ message: reason instanceof Error ? reason.message : 'Drift rerun failed.' });
+    } finally {
+      setIsRerunning(false);
+    }
   };
 
   const handleBrokerAction = async (action: string) => {
     if (!id) return;
     setActionLoading(action);
-    const updated = await api.decideApproval(id, action, 'Demo Approver', action === 'Keep, with reason' ? 'Need it for deployment' : undefined);
-    setFinding(updated);
-    if (action === 'Reduce further') {
-      const newPlan = await api.getPlan(id);
-      if (newPlan) setPlan(newPlan);
+    setActionNotice(null);
+    setError(null);
+    try {
+      const updated = await api.decideApproval(id, action, 'Demo Approver', action === 'Keep, with reason' ? 'Need it for deployment' : undefined);
+      setFinding(updated);
+      if (action === 'Reduce further') {
+        const newPlan = await api.getPlan(id);
+        if (newPlan) setPlan(newPlan);
+        setActionNotice('Access reduction recorded. The staged revoke is now verified for this captured entitlement.');
+      } else if (action === 'Approve') {
+        setActionNotice('Approval recorded. The fixture-safe execution path is now running.');
+      } else if (action === 'Defer 30 days') {
+        setActionNotice('Decision deferred for 30 days.');
+      } else {
+        setActionNotice('Decision recorded for human ratification.');
+      }
+    } catch (reason) {
+      setError({ message: reason instanceof Error ? reason.message : 'Decision failed.' });
+    } finally {
+      setActionLoading(null);
     }
-    setActionLoading(null);
   };
 
   const handleRollback = async () => {
     if (!id) return;
     setActionLoading('rollback');
-    const updated = await api.executeRollback(id);
-    setFinding(updated);
-    setActionLoading(null);
+    try {
+      const updated = await api.executeRollback(id);
+      setFinding(updated);
+    } catch (reason) {
+      setError({ message: reason instanceof Error ? reason.message : 'Rollback failed.' });
+    } finally {
+      setActionLoading(null);
+    }
   };
 
   const currentStageIndex = STAGES.indexOf(finding.current_stage === 'Rolled back' ? 'Verified' : finding.current_stage);
 
   return (
-    <div className="p-8 max-w-7xl mx-auto space-y-6">
+    <div className="mx-auto min-w-0 max-w-7xl space-y-6 p-8">
       <button 
         onClick={() => navigate(-1)}
         className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors focus:outline-none focus:ring-2 focus:ring-ring rounded px-2 py-1 -ml-2"
       >
-        <ArrowLeft className="w-4 h-4" /> Back to Queue
+        <ArrowLeft className="w-4 h-4" /> Back to findings
       </button>
 
       <div className="flex items-start justify-between">
@@ -86,15 +142,27 @@ export function FindingDetail() {
               {finding.tier} Policy
             </span>
           </div>
-          <p className="text-muted-foreground">
+            <p className="text-muted-foreground">
             Identity: <strong className="text-foreground">{finding.entitlement.identity_id}</strong>
           </p>
+          <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+            <ProvenanceBadge finding={finding} />
+            {finding.observe_only && <span className="tier-badge tier-T0">Observe only: provider marks this entitlement non-revocable</span>}
+            {finding.evaluated_at && <span className="font-mono">Evaluated at {finding.evaluated_at}</span>}
+          </div>
         </div>
         <div className="text-right">
           <div className="text-4xl font-mono font-bold leading-none">{finding.score.total.toFixed(0)}</div>
-          <div className="text-xs text-muted-foreground uppercase tracking-wide mt-1">Risk Score</div>
+          <div className="text-xs text-muted-foreground mt-1">Risk score</div>
         </div>
       </div>
+
+      {error && (
+        <div className="rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm">
+          <span className="font-mono text-xs">{error.code ? `${error.code}: ` : ''}{error.message}</span>
+          <button type="button" onClick={() => setError(null)} className="ml-3 text-xs font-semibold underline">Dismiss</button>
+        </div>
+      )}
 
       {/* Pipeline View */}
       <div className="bg-card border border-border rounded-lg p-6">
@@ -150,7 +218,7 @@ export function FindingDetail() {
                 <div className={twMerge(clsx("w-8 h-8 rounded-full border-2 flex items-center justify-center bg-card transition-colors", statusColor))}>
                   {statusIcon}
                 </div>
-                <span className={clsx("text-xs font-semibold uppercase tracking-wider", isCurrent ? "text-foreground" : "text-muted-foreground")}>
+                <span className={clsx("text-xs font-semibold", isCurrent ? "text-foreground" : "text-muted-foreground")}>
                   {stage === 'Verified' && finding.current_stage === 'Rolled back' ? 'Rolled Back' : stage}
                 </span>
               </div>
@@ -161,25 +229,20 @@ export function FindingDetail() {
         {/* Plan Hash Comparison UI */}
         {plan && (
           <div className="mt-8 p-4 bg-muted/30 rounded border border-border">
-            <h4 className="text-sm font-semibold mb-3 flex items-center gap-2 text-muted-foreground uppercase tracking-wide">
-              <Hash className="w-4 h-4" /> Deterministic Plan Hash
+            <h4 className="text-sm font-semibold mb-3 flex items-center gap-2 text-muted-foreground">
+              <Hash className="w-4 h-4" /> Deterministic plan hash
             </h4>
-            <div className="flex items-center gap-4">
-              <div className="flex-1 font-mono text-sm bg-background p-2 rounded border border-border truncate">
-                {plan.hash}
-              </div>
-              {isHashMatched !== null && (
-                <div className="flex items-center gap-2">
-                  <ArrowLeft className="w-4 h-4 text-muted-foreground" />
-                  <div className="flex-1 font-mono text-sm bg-background p-2 rounded border border-border truncate opacity-50">
-                    {previousHash}
-                  </div>
-                  <span className={clsx("text-xs font-bold px-2 py-1 rounded", isHashMatched ? "bg-accent/20 text-accent" : "bg-destructive/20 text-destructive")}>
-                    {isHashMatched ? 'MATCH (DETERMINISTIC)' : 'MISMATCH'}
-                  </span>
-                </div>
-              )}
+            <p className="mb-3 text-xs text-muted-foreground">As of {finding.evaluated_at ?? 'timestamp not provided'}. The plan hash excludes mutable plan metadata.</p>
+            <div className="grid gap-2 md:grid-cols-2">
+              <div><p className="mb-1 text-xs text-muted-foreground">Current plan hash</p><div className="hash-value">{plan.hash}</div></div>
+              <div><p className="mb-1 text-xs text-muted-foreground">Previous plan hash</p><div className="hash-value">{previousHash ?? 'Not compared yet — run the engine to compare.'}</div></div>
             </div>
+            <p className={clsx("mt-3 text-xs font-semibold", isHashMatched === false ? "text-destructive" : "text-accent")}>{isHashMatched === null ? 'Comparison pending' : isHashMatched ? 'Match — deterministic plan confirmed' : 'Mismatch — investigate before approval'}</p>
+            {isHashMatched !== null && (
+              <p className="mt-2 text-xs font-mono text-muted-foreground">
+                Plan IDs: {previousPlanId} / {rerunPlanId}. {previousPlanId !== rerunPlanId ? 'Envelope changed.' : 'Envelope unchanged.'}
+              </p>
+            )}
             {isHashMatched !== null && (
               <p className="text-xs text-muted-foreground mt-2 italic">
                 The identical hash confirms the drift engine is a pure function. Same graph + same policy = exact same plan.
@@ -189,31 +252,32 @@ export function FindingDetail() {
         )}
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <div className="grid min-w-0 grid-cols-1 gap-6 md:grid-cols-2">
         {/* Evidence Panel */}
         <div className="bg-card border border-border rounded-lg p-6 space-y-4">
           <h3 className="font-semibold flex items-center gap-2 mb-4"><Shield className="w-4 h-4" /> Risk Decomposition</h3>
           
           <div className="space-y-3">
-            <ScoreRow label="S — Scope Severity" value={finding.score.S.toFixed(2)} text={`Level: \${finding.entitlement.scope}`} />
-            <ScoreRow label="D — Dormancy" value={finding.score.D.toFixed(2)} text={`Last used \${finding.evidence.days_unused} days ago`} />
+            <ScoreRow label="S — Scope Severity" value={finding.score.S.toFixed(2)} text={`Level: ${finding.entitlement.scope}`} />
+            <ScoreRow label="D — Dormancy" value={finding.score.D.toFixed(2)} text={`Last used ${finding.evidence.days_unused} days ago`} />
             <ScoreRow label="M — Role Mismatch" value={finding.score.M.toFixed(2)} text={finding.evidence.role_mismatch ? "Absent from approved template" : "Present in template"} />
-            <ScoreRow label="B — Blast Radius" value={finding.score.B.toFixed(2)} text={`Reaches \${finding.evidence.blast_radius_count} resources`} />
+            <ScoreRow label="B — Blast Radius" value={finding.score.B.toFixed(2)} text={`Reaches ${finding.evidence.blast_radius_count} resources`} />
             <div className="pt-3 mt-3 border-t border-border flex justify-between items-center font-bold">
-              <span>Final Risk Score</span>
+              <span>Final risk score</span>
               <span className="font-mono text-lg">{finding.score.total.toFixed(0)} / 100</span>
             </div>
           </div>
         </div>
 
         {/* Action Panel / Approval Broker */}
-        <div className="bg-card border border-border rounded-lg p-6 flex flex-col">
+        <div className="min-w-0 rounded-lg border border-border bg-card p-6 flex flex-col">
           <h3 className="font-semibold mb-4 text-foreground flex items-center justify-between">
             Broker Interaction
             {finding.stage_status === 'blocked-on-approval' && <span className="bg-warning/20 text-warning px-2 py-0.5 rounded text-xs animate-pulse">Awaiting Decision</span>}
           </h3>
           
-          <div className="flex-1 flex justify-center w-full">
+          <div className="flex flex-1 flex-col items-center w-full">
+            {actionNotice && <div className="mb-4 w-full rounded border border-accent/30 bg-accent/10 p-3 text-sm text-accent" role="status">{actionNotice}</div>}
             <ApprovalCard 
               finding={finding} 
               plan={plan || null} 

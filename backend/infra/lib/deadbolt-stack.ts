@@ -1,6 +1,8 @@
+import { execFileSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as cdk from 'aws-cdk-lib';
+import * as cognito from 'aws-cdk-lib/aws-cognito';
 import { Duration, RemovalPolicy, Stack, type StackProps } from 'aws-cdk-lib';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as events from 'aws-cdk-lib/aws-events';
@@ -24,12 +26,28 @@ export class DeadboltStack extends Stack {
   public readonly snapshotBucket: s3.Bucket;
   public readonly preimageBucket: s3.Bucket;
   public readonly auditBucket: s3.Bucket;
+  public readonly operatorUserPool: cognito.UserPool;
+  public readonly operatorUserPoolClient: cognito.UserPoolClient;
 
   public constructor(scope: Construct, id: string, props?: StackProps) {
     super(scope, id, props);
     if (this.region !== REGION) {
       throw new Error(`Deadbolt must be deployed in ${REGION}`);
     }
+    const pythonCode = this.pythonCode();
+    const schedulesEnabled = this.schedulesEnabled();
+    const authRequired = this.authRequired();
+    this.operatorUserPool = new cognito.UserPool(this, 'OperatorUserPool', {
+      userPoolName: 'deadbolt-operators',
+      selfSignUpEnabled: true,
+      autoVerify: { email: true },
+      signInAliases: { email: true },
+      removalPolicy: RemovalPolicy.DESTROY,
+    });
+    this.operatorUserPoolClient = this.operatorUserPool.addClient('OperatorWebClient', {
+      authFlows: { userPassword: true },
+      preventUserExistenceErrors: true,
+    });
 
     this.graphTable = new dynamodb.Table(this, 'GraphTable', {
       tableName: 'deadbolt-graph',
@@ -68,19 +86,20 @@ export class DeadboltStack extends Stack {
     }));
     this.deploySpa(spaBucket);
 
-    const credentials = CONNECTORS.map((system) => new ssm.StringParameter(this, `${this.idFor(system)}Credential`, {
-      parameterName: `/deadbolt/connectors/${system}/credential`,
-      stringValue: 'configure-before-deploy',
-      type: ssm.ParameterType.SECURE_STRING,
-      description: `SecureString credential for the ${system} connector`,
-    }));
+    const credentials = CONNECTORS.map((system) => ssm.StringParameter.fromSecureStringParameterAttributes(
+      this,
+      `${this.idFor(system)}Credential`,
+      { parameterName: `/deadbolt/connectors/${system}/credential` },
+    ));
 
-    const connectors = this.function('Connectors', 'connectors', 'deadbolt.broker.handler.lambda_handler');
-    const driftEngine = this.function('DriftEngine', 'drift-engine', 'deadbolt.broker.handler.lambda_handler');
-    const planBuilder = this.function('PlanBuilder', 'plan-builder', 'deadbolt.broker.handler.lambda_handler');
-    const executor = this.function('Executor', 'executor', 'deadbolt.broker.handler.lambda_handler');
-    const brokerHandler = this.function('BrokerHandler', 'broker-handler', 'deadbolt.broker.handler.lambda_handler');
-    const budgetGuard = this.function('BudgetGuard', 'budget-guard', 'budget_guard.handler.lambda_handler');
+    const connectors = this.function('Connectors', 'connectors', 'deadbolt.broker.handler.lambda_handler', pythonCode);
+    const driftEngine = this.function('DriftEngine', 'drift-engine', 'deadbolt.broker.handler.lambda_handler', pythonCode);
+    const planBuilder = this.function('PlanBuilder', 'plan-builder', 'deadbolt.broker.handler.lambda_handler', pythonCode);
+    const executor = this.function('Executor', 'executor', 'deadbolt.broker.handler.lambda_handler', pythonCode);
+    const brokerHandler = this.function('BrokerHandler', 'broker-handler', 'deadbolt.broker.handler.lambda_handler', pythonCode);
+    const budgetGuard = this.function('BudgetGuard', 'budget-guard', 'budget_guard.handler.lambda_handler', pythonCode);
+    const apiHandler = this.function('ApiHandler', 'api', 'deadbolt.handlers.api.lambda_handler', pythonCode);
+    const mcpHandler = this.function('McpHandler', 'mcp', 'deadbolt.mcp_lambda.lambda_handler', pythonCode);
 
     this.addLogPolicy(connectors, 'connectors');
     this.addLogPolicy(driftEngine, 'drift-engine');
@@ -88,6 +107,10 @@ export class DeadboltStack extends Stack {
     this.addLogPolicy(executor, 'executor');
     this.addLogPolicy(brokerHandler, 'broker-handler');
     this.addLogPolicy(budgetGuard, 'budget-guard');
+    this.addLogPolicy(apiHandler, 'api');
+    this.addLogPolicy(mcpHandler, 'mcp');
+    this.grantConnectionAccess(apiHandler);
+    this.grantConnectionAccess(mcpHandler);
 
     this.grantConnectorAccess(connectors, credentials, this.snapshotBucket);
     this.grantDriftAccess(driftEngine);
@@ -99,6 +122,20 @@ export class DeadboltStack extends Stack {
     const brokerUrl = brokerHandler.addFunctionUrl({
       authType: lambda.FunctionUrlAuthType.NONE,
       cors: { allowedOrigins: ['*'], allowedMethods: [lambda.HttpMethod.ALL], allowedHeaders: ['*'] },
+    });
+    const apiUrl = apiHandler.addFunctionUrl({
+      authType: lambda.FunctionUrlAuthType.NONE,
+      cors: {
+        allowedOrigins: [spaBucket.bucketWebsiteUrl, 'http://localhost:5173', 'http://127.0.0.1:5173'],
+        // Lambda Function URLs handle OPTIONS preflight automatically; CloudFormation only
+        // accepts the actual methods here.
+        allowedMethods: [lambda.HttpMethod.GET, lambda.HttpMethod.POST],
+        allowedHeaders: ['content-type', 'authorization'],
+      },
+    });
+    const mcpUrl = mcpHandler.addFunctionUrl({
+      authType: lambda.FunctionUrlAuthType.NONE,
+      cors: { allowedOrigins: ['*'], allowedMethods: [lambda.HttpMethod.ALL], allowedHeaders: ['content-type', 'authorization'] },
     });
 
     const stateMachineRole = new iam.Role(this, 'BrokerStateMachineRole', {
@@ -120,33 +157,43 @@ export class DeadboltStack extends Stack {
       }))),
     });
 
-    const schedulerRole = new iam.Role(this, 'SnapshotSchedulerRole', {
-      assumedBy: new iam.ServicePrincipal('scheduler.amazonaws.com'),
-    });
-    schedulerRole.addToPolicy(new iam.PolicyStatement({
-      actions: ['lambda:InvokeFunction'],
-      resources: [connectors.functionArn],
-    }));
-    new scheduler.CfnSchedule(this, 'HourlySnapshotSchedule', {
-      flexibleTimeWindow: { mode: 'OFF' },
-      scheduleExpression: 'rate(1 hour)',
-      scheduleExpressionTimezone: 'UTC',
-      target: { arn: connectors.functionArn, roleArn: schedulerRole.roleArn, input: JSON.stringify({ trigger: 'hourly-snapshot' }) },
-    });
-
     const hrBus = new events.EventBus(this, 'HrEventBus', { eventBusName: 'deadbolt-hr-events' });
-    const hrRule = new events.Rule(this, 'HrEventRefreshRule', {
-      eventBus: hrBus,
-      eventPattern: { source: ['deadbolt.hr'], detailType: ['EmployeeChanged'] },
-    });
-    hrRule.addTarget(new targets.LambdaFunction(connectors, { event: events.RuleTargetInput.fromObject({ trigger: 'hr-event', detail: events.EventField.fromPath('$.detail') }) }));
+    if (schedulesEnabled) {
+      const schedulerRole = new iam.Role(this, 'SnapshotSchedulerRole', {
+        assumedBy: new iam.ServicePrincipal('scheduler.amazonaws.com'),
+      });
+      schedulerRole.addToPolicy(new iam.PolicyStatement({
+        actions: ['lambda:InvokeFunction'],
+        resources: [connectors.functionArn],
+      }));
+      new scheduler.CfnSchedule(this, 'HourlySnapshotSchedule', {
+        flexibleTimeWindow: { mode: 'OFF' },
+        scheduleExpression: 'rate(1 hour)',
+        scheduleExpressionTimezone: 'UTC',
+        target: { arn: connectors.functionArn, roleArn: schedulerRole.roleArn, input: JSON.stringify({ trigger: 'hourly-snapshot' }) },
+      });
 
-    const budgetRule = new events.Rule(this, 'BudgetGuardSchedule', { schedule: events.Schedule.expression('rate(6 hours)') });
-    budgetRule.addTarget(new targets.LambdaFunction(budgetGuard));
+      const budgetRule = new events.Rule(this, 'BudgetGuardSchedule', { schedule: events.Schedule.expression('rate(6 hours)') });
+      budgetRule.addTarget(new targets.LambdaFunction(budgetGuard));
+      const hrRule = new events.Rule(this, 'HrEventRefreshRule', {
+        eventBus: hrBus,
+        eventPattern: { source: ['deadbolt.hr'], detailType: ['EmployeeChanged'] },
+      });
+      hrRule.addTarget(new targets.LambdaFunction(connectors, { event: events.RuleTargetInput.fromObject({ trigger: 'hr-event', detail: events.EventField.fromPath('$.detail') }) }));
+    }
     new cdk.CfnOutput(this, 'BrokerFunctionUrl', { value: brokerUrl.url });
+    new cdk.CfnOutput(this, 'ApiFunctionUrl', { value: apiUrl.url });
+    new cdk.CfnOutput(this, 'ApiBaseUrl', { value: `${apiUrl.url}api` });
+    new cdk.CfnOutput(this, 'McpEndpoint', { value: `${mcpUrl.url}mcp` });
     new cdk.CfnOutput(this, 'ApprovalBrokerStateMachineArn', { value: stateMachine.stateMachineArn });
     new cdk.CfnOutput(this, 'HrEventBusArn', { value: hrBus.eventBusArn });
     new cdk.CfnOutput(this, 'SpaWebsiteUrl', { value: spaBucket.bucketWebsiteUrl });
+    new cdk.CfnOutput(this, 'SpaBucketName', { value: spaBucket.bucketName });
+    new cdk.CfnOutput(this, 'SchedulesEnabled', { value: String(schedulesEnabled) });
+    new cdk.CfnOutput(this, 'CognitoUserPoolId', { value: this.operatorUserPool.userPoolId });
+    new cdk.CfnOutput(this, 'CognitoClientId', { value: this.operatorUserPoolClient.userPoolClientId });
+    new cdk.CfnOutput(this, 'CognitoRegion', { value: REGION });
+    new cdk.CfnOutput(this, 'AuthRequired', { value: String(authRequired) });
   }
 
   private lockedBucket(id: string): s3.Bucket {
@@ -172,28 +219,24 @@ export class DeadboltStack extends Stack {
     });
   }
 
-  private function(id: string, name: string, handler: string): lambda.Function {
-    const backend = path.resolve(__dirname, '../..');
+  private function(id: string, name: string, handler: string, code: lambda.Code): lambda.Function {
     return new lambda.Function(this, id, {
       functionName: `deadbolt-${name}`,
       runtime: lambda.Runtime.PYTHON_3_12,
       architecture: lambda.Architecture.ARM_64,
       memorySize: 512,
       timeout: Duration.seconds(30),
-      code: lambda.Code.fromAsset(backend, {
-        exclude: [
-          'infra',
-          'infra/**',
-          '.venv',
-          '.venv/**',
-          '.pytest_cache',
-          '.pytest_cache/**',
-          'artifacts',
-          'artifacts/**',
-        ],
-      }),
+      code,
       handler,
-      environment: { PYTHONPATH: 'src' },
+      environment: {
+        PYTHONPATH: 'src',
+        // The handler falls back to fixtures when this optional artifact is absent.
+        DEADBOLT_CAPTURE_DIR: 'artifacts/captures',
+        DEADBOLT_AUTH_REQUIRED: String(this.authRequired()),
+        COGNITO_REGION: REGION,
+        COGNITO_USER_POOL_ID: this.operatorUserPool.userPoolId,
+        COGNITO_CLIENT_ID: this.operatorUserPoolClient.userPoolClientId,
+      },
       logGroup: new logs.LogGroup(this, `${id}LogGroup`, {
         logGroupName: `/aws/lambda/deadbolt-${name}`,
         retention: logs.RetentionDays.ONE_DAY,
@@ -201,6 +244,52 @@ export class DeadboltStack extends Stack {
       }),
       role: this.lambdaRole(`${id}Role`),
     });
+  }
+
+  private pythonCode(): lambda.Code {
+    const backend = path.resolve(__dirname, '../..');
+    return lambda.Code.fromAsset(backend, {
+      bundling: {
+        image: lambda.Runtime.PYTHON_3_12.bundlingImage,
+        local: {
+          tryBundle: (outputDir: string): boolean => {
+            execFileSync('uv', [
+              'pip', 'install', '--target', outputDir,
+              '--python-platform', 'aarch64-manylinux2014',
+              '--python-version', '3.12', '.',
+            ], { cwd: backend, stdio: 'inherit' });
+            for (const packageName of ['scenarios', 'budget_guard']) {
+              fs.cpSync(path.join(backend, packageName), path.join(outputDir, packageName), { recursive: true });
+            }
+            fs.cpSync(
+              path.join(backend, 'tests', 'fixtures', 'scenario'),
+              path.join(outputDir, 'tests', 'fixtures', 'scenario'),
+              { recursive: true },
+            );
+            const captures = path.join(backend, 'artifacts', 'captures');
+            if (fs.existsSync(captures)) {
+              fs.mkdirSync(path.join(outputDir, 'artifacts'), { recursive: true });
+              fs.cpSync(captures, path.join(outputDir, 'artifacts', 'captures'), { recursive: true });
+            }
+            return true;
+          },
+        },
+      },
+    });
+  }
+
+  private schedulesEnabled(): boolean {
+    const contextValue = this.node.tryGetContext('enableSchedules');
+    return contextValue === true
+      || contextValue === 'true'
+      || process.env.DEADBOLT_ENABLE_SCHEDULES === 'true';
+  }
+
+  private authRequired(): boolean {
+    const contextValue = this.node.tryGetContext('requireAuth');
+    return contextValue === true
+      || contextValue === 'true'
+      || process.env.DEADBOLT_REQUIRE_AUTH === 'true';
   }
 
   private lambdaRole(id: string): iam.Role {
@@ -221,11 +310,18 @@ export class DeadboltStack extends Stack {
     }));
   }
 
-  private grantConnectorAccess(fn: lambda.Function, credentials: ssm.StringParameter[], snapshots: s3.Bucket): void {
+  private grantConnectorAccess(fn: lambda.Function, credentials: ssm.IStringParameter[], snapshots: s3.Bucket): void {
     fn.addToRolePolicy(new iam.PolicyStatement({ actions: ['ssm:GetParameter', 'ssm:GetParameters'], resources: credentials.map((item) => item.parameterArn) }));
     fn.addToRolePolicy(new iam.PolicyStatement({ actions: ['dynamodb:BatchWriteItem', 'dynamodb:PutItem'], resources: [this.graphTable.tableArn] }));
     snapshots.grantPut(fn);
     fn.addToRolePolicy(new iam.PolicyStatement({ actions: ['iam:ListUsers', 'iam:ListAttachedUserPolicies', 'iam:ListUserPolicies', 'iam:GetUserPolicy', 'iam:GenerateServiceLastAccessedDetails', 'iam:GetServiceLastAccessedDetails'], resources: [`arn:aws:iam::${this.account}:user/*`] }));
+  }
+
+  private grantConnectionAccess(fn: lambda.Function): void {
+    fn.addToRolePolicy(new iam.PolicyStatement({
+      actions: ['ssm:GetParameter', 'ssm:PutParameter', 'ssm:DeleteParameter'],
+      resources: [`arn:aws:ssm:${REGION}:${this.account}:parameter/deadbolt/connections/*`],
+    }));
   }
 
   private grantDriftAccess(fn: lambda.Function): void {

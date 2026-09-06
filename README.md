@@ -1,13 +1,139 @@
 # Deadbolt
 
-Deadbolt is a deterministic entitlement-drift detector and reversible remediation broker for
-the joiner–mover–leaver lifecycle. The architecture diagram and data model are maintained in
-the [PRD architecture section](PRD_Deadbolt_SaaS_Drift_Access_Negotiator.pdf); the runtime path is connector snapshot →
-DynamoDB/S3 graph → pure drift engine → hashed plan → approval/executor → verified rollback.
+Deadbolt helps security and identity teams detect entitlement drift and negotiate safe, reversible access cleanup across SaaS systems.
 
-## Reproducible demo
+## Live demo links
 
-The complete seeded rehearsal is two commands from `backend/` and is safe to repeat:
+These are the last deployed fixture-and-capture-backed endpoints. The infrastructure now supports
+an authenticated redeploy; until that redeploy is completed, treat these legacy links as public and
+do not put customer data or provider credentials behind them:
+
+- Dashboard: http://deadboltstack-spabucket48e1059f-lkktwfgep3hp.s3-website-us-east-1.amazonaws.com
+- API base: https://lxrh6ikc4jyhzphnvvupuffkhq0uhuhk.lambda-url.us-east-1.on.aws/api
+- MCP endpoint: https://thabg6ly2uehff7x2yxvtci2qy0gscfp.lambda-url.us-east-1.on.aws/mcp
+
+The currently published links are legacy fixture-and-capture demo endpoints and require the next
+authenticated redeploy to receive the latest dashboard and capture-only behavior. Do not put
+production credentials or customer data into these public demo URLs.
+
+For the submission-ready deployment, run the [auth-enabled deployment runbook](backend/infra/DEPLOY.md)
+with `-c requireAuth=true`, then rebuild the dashboard with the emitted Cognito pool and client IDs.
+The browser signs in through Cognito and sends a short-lived ID-token bearer header to both the API
+and MCP endpoint.
+
+## What is real
+
+| System | Read | Revoke | Rollback | Data source | Why |
+|---|---|---|---|---|---|
+| AWS IAM | Implemented provider and sandbox rehearsal | Implemented, reversible policy detach | Implemented | Fixture in normal demo; throwaway live test only | Safe live rehearsal is limited to a disposable IAM user. |
+| GitHub | Implemented provider; redacted capture loader | Implemented for the real provider, disabled in demo | Implemented for the real provider | Fixture unless an owner-provided capture is installed | The public demo must not carry a live PAT. |
+| Slack | Implemented provider | Implemented, reversible | Implemented | Fixture | No live token is bundled. |
+| Notion | Implemented provider | Implemented, reversible | Implemented | Fixture | Not credentialed for this submission. |
+| Salesforce | Real-shaped JWT/SOQL provider | Permission-set assignment path implemented | Assignment restore implemented | Fixture | No Connected App credentials were supplied. |
+| GitHub Enterprise | Real-shaped Cloud/Server provider | Capability-aware path implemented | Key path only where reversible | Fixture | No enterprise PAT or Server base URL was supplied. |
+| Workday | Real-shaped read-only provider | No | No | Fixture | No tenant or sandbox credentials were supplied. |
+
+The browser approval and rollback controls are fixture-only in this milestone. They do not call a live provider.
+
+## Operator connections
+
+After the authenticated redeploy, operators can open **Connections** in the dashboard and configure
+GitHub, Salesforce, or Workday. The API stores each operator's configuration in SSM SecureString
+under a subject-hashed path and returns status metadata only. The connection test performs a
+read-only provider snapshot; Workday is always read-only. Operators can explicitly choose
+**Scan into dashboard** to promote that verified snapshot into the review dataset; the scan is
+read-only and does not change provider access.
+
+## Deterministic plans
+
+For the same graph and `evaluated_at`, Deadbolt produces the same `plan_hash`; each run still receives a distinct `plan_id`. Reproduce that claim with:
+
+```bash
+cd backend
+uv run pytest -q -m e2e -s tests/e2e/test_full_cycle.py
+```
+
+The test asserts equal hashes and different IDs, alongside the 20-planted-finding rehearsal evidence.
+
+## 90-second local quickstart
+
+Clone this repository, then run:
+
+```bash
+cd sams_simlplifynext/backend
+uv sync --all-extras --dev
+make demo-run
+```
+
+Open the dashboard at `http://localhost:5173` after starting the local API and frontend:
+
+```bash
+uv run python -m deadbolt.api
+```
+
+In a second terminal:
+
+```bash
+cd sams_simlplifynext/frontend
+npm ci --no-audit --no-fund
+npm run dev
+```
+
+The local SPA always uses the HTTP API configured by `VITE_API_BASE`. For a real-data local rehearsal,
+start the API with `DEADBOLT_CAPTURE_DIR=backend/artifacts/captures`; the checked-in fixture scenario
+remains available through `make demo-run` for deterministic tests.
+
+## Live AWS rehearsal
+
+Use only the hackathon account in `us-east-1` and a throwaway IAM user. Never run the live test against an employee, production, or personal identity. The test revokes one disposable policy and restores it before finishing.
+
+```bash
+cd backend
+export AWS_DEFAULT_REGION=us-east-1
+export DEADBOLT_LIVE_IAM_USER=<throwaway-iam-user>
+aws sts get-caller-identity --region us-east-1
+uv run pytest -q -m live tests/live/test_sandbox_iam.py
+```
+
+The GitHub capture command requires owner-provided `GITHUB_ORG` and `GITHUB_TOKEN` environment variables. It writes only the redacted canonical artifact and manifest; it never prints the token.
+
+## Architecture and agent boundary
+
+```text
+provider snapshots -> graph store -> pure drift engine -> canonical plan/hash
+        |                                  |
+        v                                  v
+     findings <- HTTP dashboard       approval broker <- one bounded LLM proposal
+        |                                  |
+        +---------------------------> executor -> verify -> audit/rollback
+```
+
+The LLM may propose an explanation or a non-widening scope adjustment inside the broker. It does not score risk, choose plan ordering, hash plans, authorize actions, execute revocations, or verify rollback. Those boundaries are deterministic code. See [the architecture note](backend/docs/ARCHITECTURE.md) and [the demo runbook](backend/docs/DEMO_RUNBOOK.md).
+
+## Cost posture
+
+The deployed rehearsal is near-zero idle cost: Lambda and Function URLs are on demand, DynamoDB uses pay-per-request capacity, S3 stores a small static site and audit artifacts, and CloudWatch logs retain for one day. Recurring schedules are disabled by default.
+
+The stack deliberately has no NAT Gateway, ALB, EC2, RDS, OpenSearch, SageMaker endpoint, or provisioned capacity. Destroy the stack after the demo to avoid storage and retained-object charges:
+
+```bash
+cd backend/infra
+npx cdk destroy DeadboltStack --force
+```
+
+## Tests and gates
+
+The current non-live suite passes 125 tests with 85.02% coverage. Run the milestone gates from the repository root:
+
+```bash
+make -f backend/GNUmakefile gate-m10
+make -f backend/GNUmakefile gate-m11
+make -f backend/GNUmakefile gate-m12
+make -f backend/GNUmakefile gate-m13
+make -f backend/GNUmakefile gate-m12r
+```
+
+The seeded end-to-end rehearsal is also available directly:
 
 ```bash
 cd backend
@@ -15,98 +141,4 @@ make demo-reset
 make demo-run
 ```
 
-`demo-run` executes `tests/e2e/test_full_cycle.py`, prints M1/M2/M3/M5, and writes
-`artifacts/m8-metrics.json`. The scenario contains one mover, one leaver, and 20 planted findings
-across AWS IAM, GitHub, Slack, Notion, Salesforce, and Workday, plus one ratified in-policy
-entitlement that must not be revoked.
-
-Connector tiers are explicit and configuration-driven:
-
-| System | Tier | Auth | Read surface | Write surface | Reversible | When real credentials arrive |
-|---|---|---|---|---|---|---|
-| AWS IAM | A | boto3 role | users, policies, usage | detach/restore policy | yes | switch registry mode to `real` |
-| GitHub | A | PAT | org members, collaborators | permission downgrade/revoke | yes for collaborators | configure `GITHUB_ORG` and `GITHUB_TOKEN` |
-| GitHub Enterprise | B | enterprise PAT | PATs, SAML credentials, deploy keys, audit/capabilities | credential/key revocation | PAT/SAML no; keys yes | configure Enterprise API/GraphQL bases and PAT |
-| Slack | A | bot token | workspace grants | revoke/restore grant | yes | configure Slack token |
-| Notion | A | integration token | workspace pages/grants | revoke/restore grant | yes | configure Notion token |
-| Salesforce | B (promotable) | Connected App JWT | permission assignments, object/field permissions, login history | assignment delete/recreate | yes for assignments | configure JWT settings and switch registry mode to `real` |
-| Workday | B | tenant bearer/RaaS | workers and security groups | read-only | no | configure tenant/report credentials; HR remains event source |
-
-The offline demo uses real-shaped local seeds for every system, while the explicit live rehearsal
-uses the throwaway IAM user and GitHub repository configured for the sandbox. No live credentials
-are needed by CI or `make demo-run`.
-
-The `budget_guard` Lambda is intended to run on EventBridge’s `rate(6 hours)` schedule, query
-Cost Explorer, and notify Slack once at each newly crossed $5, $10, and $14 threshold.
-
-The lower-level terminal rehearsal remains available:
-
-```bash
-cd backend
-uv run python -m deadbolt.cli snapshot --dry-run
-uv run python -m deadbolt.cli detect --dry-run
-uv run python -m deadbolt.cli plan --dry-run
-uv run python -m deadbolt.cli execute --dry-run
-uv run python -m deadbolt.cli rollback --dry-run
-```
-
-For the sandbox IAM revoke/restore test, configure a throwaway user and run the live test
-explicitly; it is never part of CI:
-
-```bash
-cd backend && AWS_DEFAULT_REGION=us-east-1 uv run pytest -q -m live tests/live/test_sandbox_iam.py
-```
-
-## Exact live-demo rehearsal checklist
-
-1. Confirm the AWS account is the Innovation Sandbox in `us-east-1` and the budget guard is active.
-2. Confirm `DEADBOLT_LIVE_IAM_USER` is a throwaway user with a reversible attached policy.
-3. Confirm `GITHUB_ORG`, `GITHUB_TOKEN`, and one throwaway `owner/repository` are set.
-4. From `backend/`, run `make demo-reset` and then `make demo-run`; show the 20/20 recall and the JSON artifact.
-5. Point to the in-policy GitHub read entitlement and show M2 is exactly zero.
-6. Run the live IAM test with `AWS_DEFAULT_REGION=us-east-1 uv run pytest -q -m live tests/live/test_sandbox_iam.py`.
-7. On stage, run the deterministic test twice at the same `evaluated_at`; show equal `plan_hash`
-   values and different `plan_id` values.
-8. Show one approved action’s dry-run, apply, audit record, and verified rollback; leave the
-   sandbox with the throwaway IAM user restored.
-9. Confirm `artifacts/m8-metrics.json` is the artifact cited in the pitch and delete no audit data.
-
-## Audit and telemetry configuration
-
-Audit events are written to an S3 bucket with Object Lock and a per-plan SHA-256 chain. The
-sandbox must set `AUDIT_OBJECT_LOCK_MODE=GOVERNANCE`; production deployments must set
-`AUDIT_OBJECT_LOCK_MODE=COMPLIANCE`. The writer reads the mode from configuration and never
-chooses a production mode implicitly. `AUDIT_RETENTION_DAYS` controls the object retention
-period (the default is one day for the low-cost rehearsal).
-
-Lambda functions use the AWS Distro for OpenTelemetry (ADOT) Lambda layer. Configure its OTLP
-collector endpoint with `OTEL_EXPORTER_OTLP_ENDPOINT`; the default local collector endpoint is
-`http://localhost:4318`. CloudWatch log groups use a one-day retention policy.
-
-## Deploying the AWS packaging
-
-M9 provisions the low-cost `us-east-1` stack: the on-demand graph table, Object-Lock snapshot,
-pre-image, and audit buckets, ARM64 Lambdas, the Standard approval broker, hourly snapshots,
-HR-event refresh, SecureString connector parameters, and the static SPA bucket. The CDK app
-uses the Vite build output at `frontend/dist` (the repository's case-insensitive checkout may
-show this directory as `frontend/dist`); if it is absent at synth time, it deploys a harmless
-placeholder and can be repopulated after `npm run build`.
-
-```bash
-cd backend/infra
-npm ci
-npx cdk synth
-npx cdk deploy --all --require-approval never
-```
-
-Set each `/deadbolt/connectors/*/credential` SSM SecureString to the real connector credential
-after deployment. Do not put credentials in `cdk.json`, source control, or CloudFormation
-parameters. The audit writer's object retention mode remains an application deployment setting:
-use `GOVERNANCE` in the sandbox and `COMPLIANCE` in production.
-
-To remove the complete rehearsal stack, including its buckets and retained objects, run this
-single command from `backend/infra/`:
-
-```bash
-npx cdk destroy --all --force
-```
+M14 is intentionally not enabled: its mandatory post-submission prerequisites—authenticated public endpoints, a least-privilege SSM PAT, an expiring fine-grained token, and a separate rehearsal—are not satisfied.

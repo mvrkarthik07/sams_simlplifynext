@@ -1,0 +1,9 @@
+{
+  "name": "Deadbolt entitlement register",
+  "short_name": "Deadbolt",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#FBFBFA",
+  "theme_color": "#16181A",
+  "icons": [{ "src": "/brand/logo-tile.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
+}

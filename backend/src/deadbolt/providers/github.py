@@ -200,6 +200,105 @@ class GitHubProvider:
             result["scopes"] = header_scopes
         return result
 
+    @staticmethod
+    def _object(response: httpx.Response, operation: str) -> Mapping[str, object]:
+        try:
+            payload = response.json()
+        except ValueError as exc:
+            raise ProviderError(f"GitHub {operation} returned invalid JSON") from exc
+        if not isinstance(payload, Mapping):
+            raise ProviderError(f"GitHub {operation} returned a non-object payload")
+        return payload
+
+    def organization_members(self) -> tuple[Mapping[str, object], ...]:
+        """List organization members for an authenticated IAM review."""
+        return self._paged(f"/orgs/{self.org}/members?role=all")
+
+    def repositories(self) -> tuple[Mapping[str, object], ...]:
+        """List repositories visible to the connected organization administrator."""
+        return self._paged(f"/orgs/{self.org}/repos?type=all&per_page=100")
+
+    def teams(self) -> tuple[Mapping[str, object], ...]:
+        """List organization teams and their stable IDs/slugs."""
+        return self._paged(f"/orgs/{self.org}/teams?per_page=100")
+
+    def membership(self, username: str) -> Mapping[str, object]:
+        """Return one user's organization membership state."""
+        return self._object(
+            self._request("GET", f"/orgs/{self.org}/memberships/{username}"),
+            "membership lookup",
+        )
+
+    def repository_access(self, owner: str, repo: str, username: str) -> Mapping[str, object]:
+        """Return one user's effective collaborator permission on a repository."""
+        return self._object(
+            self._request("GET", f"/repos/{owner}/{repo}/collaborators/{username}/permission"),
+            "repository access lookup",
+        )
+
+    def invite_member(self, username: str, *, role: str = "member") -> Mapping[str, object]:
+        """Invite or activate an organization member; the caller must gate confirmation."""
+        if role not in {"member", "admin"}:
+            raise ProviderError("GitHub organization role must be member or admin")
+        return self._object(
+            self._request(
+                "PUT",
+                f"/orgs/{self.org}/memberships/{username}",
+                json={"role": role},
+            ),
+            "organization membership update",
+        )
+
+    def set_repository_access(
+        self,
+        owner: str,
+        repo: str,
+        username: str,
+        permission: str,
+    ) -> Mapping[str, object]:
+        """Grant or change a repository collaborator role."""
+        if permission not in {"pull", "triage", "push", "maintain", "admin"}:
+            raise ProviderError("unsupported GitHub repository permission")
+        return self._object(
+            self._request(
+                "PUT",
+                f"/repos/{owner}/{repo}/collaborators/{username}",
+                json={"permission": permission},
+            ),
+            "repository access update",
+        )
+
+    def remove_repository_access(self, owner: str, repo: str, username: str) -> None:
+        """Remove one user's direct repository collaborator access."""
+        self._request("DELETE", f"/repos/{owner}/{repo}/collaborators/{username}")
+
+    def set_team_membership(
+        self,
+        team_slug: str,
+        username: str,
+        *,
+        role: str = "member",
+    ) -> Mapping[str, object]:
+        """Add a user to a team as member or maintainer."""
+        if role not in {"member", "maintainer"}:
+            raise ProviderError("GitHub team role must be member or maintainer")
+        return self._object(
+            self._request(
+                "PUT",
+                f"/orgs/{self.org}/teams/{team_slug}/memberships/{username}",
+                json={"role": role},
+            ),
+            "team membership update",
+        )
+
+    def remove_team_membership(self, team_slug: str, username: str) -> None:
+        """Remove one user from a team without removing organization membership."""
+        self._request("DELETE", f"/orgs/{self.org}/teams/{team_slug}/memberships/{username}")
+
+    def remove_member(self, username: str) -> None:
+        """Remove a user from the organization."""
+        self._request("DELETE", f"/orgs/{self.org}/memberships/{username}")
+
     def snapshot(self) -> Iterable[Entitlement]:
         if not self.org:
             raise ProviderError("GitHub organization is required")

@@ -22,15 +22,12 @@ This is the frontend component for Deadbolt, an autonomous entitlement-drift det
    npm run dev
    \`\`\`
 
-## Swapping the Mock Data Layer for Real APIs
+## Backend transport
 
-The frontend currently uses a deterministic mock data layer located at \`src/lib/api.ts\`. This isolates the frontend from backend changes during development. 
-
-To swap to the live backend:
-1. Update \`src/lib/api.ts\` to perform real \`fetch()\` or \`axios\` calls to your AWS API Gateway / Lambda Function URLs instead of using the local \`generateSeedData()\` mock.
-2. Ensure the backend returns JSON that identically matches the \`Entitlement\`, \`Finding\`, \`Plan\`, and \`AuditLogEntry\` interfaces defined in \`src/lib/types.ts\`.
-
-Because the entire application reads from the \`api\` object exported from \`src/lib/api.ts\`, you only need to modify this single file to connect the real backend. The UI components will function normally as long as the data contract is respected.
+The dashboard always uses the HTTP client in \`src/lib/api.ts\`; there is no in-memory mock fallback.
+Set \`VITE_API_BASE\` to the API Function URL (including \`/api\`). The client sends the Cognito
+ID-token bearer from the current browser session when authenticated, applies an eight-second timeout,
+and retries network failures once. Backend responses must use the stable \`data\`/\`error\` envelope.
 
 ## Core Metaphors Implemented
 - **Pipeline View**: The finding detail screen shows drift as a CI/CD-style pipeline (Detected → Scored → Planned → Approval → Executing → Verified/Rolled back).

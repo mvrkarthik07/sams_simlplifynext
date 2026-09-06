@@ -8,6 +8,7 @@ from pathlib import Path
 
 from deadbolt.contracts.provider import EntitlementProvider
 from deadbolt.errors import ProviderError
+from deadbolt.graph.capture import CapturedProvider
 from deadbolt.providers.fixtures.salesforce import SalesforceFixtureProvider
 from deadbolt.providers.fixtures.workday import WorkdayFixtureProvider
 
@@ -50,6 +51,7 @@ def build_providers(
     *,
     factories: Mapping[str, ProviderFactory] | None = None,
     fixture_seed_dir: str | Path | None = None,
+    captured_dir: str | Path | None = None,
 ) -> tuple[EntitlementProvider, ...]:
     """Build providers in stable config-key order, without engine coupling."""
     supplied = factories or {}
@@ -65,6 +67,13 @@ def build_providers(
         elif mode == "fixture" and system == "workday":
             path = Path(fixture_seed_dir) / "workday.json" if fixture_seed_dir else None
             result.append(WorkdayFixtureProvider(path))
+        elif mode == "captured" and system == "github":
+            base = (
+                Path(captured_dir)
+                if captured_dir
+                else Path(__file__).resolve().parents[3] / "artifacts" / "captures"
+            )
+            result.append(CapturedProvider(base / "github.json"))
         elif mode == "real":
             result.append(_real_factory(system)())
         else:

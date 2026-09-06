@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 from collections.abc import Iterable
 from datetime import UTC, datetime
 from pathlib import Path
@@ -10,6 +11,7 @@ from pathlib import Path
 from deadbolt.contracts.models import ActionResult, Entitlement
 from deadbolt.contracts.provider import EntitlementProvider
 from deadbolt.engine.drift import Finding, detect
+from deadbolt.graph.capture import write_capture
 from deadbolt.plan.builder import Plan, build
 from deadbolt.plan.canonical import canonical_dumps
 from deadbolt.providers.fixtures.salesforce import SalesforceFixtureProvider
@@ -40,6 +42,13 @@ def _parser() -> argparse.ArgumentParser:
         )
         sub.add_argument("--github-org", default=argparse.SUPPRESS)
         sub.add_argument("--github-repo", action="append", default=argparse.SUPPRESS)
+    capture = subparsers.add_parser("capture")
+    capture.add_argument(
+        "--output",
+        default=str(Path(__file__).resolve().parents[2] / "artifacts" / "captures"),
+    )
+    capture.add_argument("--github-repo", action="append", default=[])
+    capture.add_argument("--provider-version", default="github-capture-v1")
     return parser
 
 
@@ -135,6 +144,23 @@ def _emit(value: object) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
+    if args.command == "capture":
+        org = os.environ.get("GITHUB_ORG", "")
+        if not org or not os.environ.get("GITHUB_TOKEN", ""):
+            raise SystemExit("capture requires GITHUB_ORG and GITHUB_TOKEN environment variables")
+        capture_provider: EntitlementProvider = GitHubProvider(
+            org,
+            repos=tuple(args.github_repo),
+        )
+        manifest = write_capture(
+            _entitlements((capture_provider,)),
+            args.output,
+            org=org,
+            captured_at=datetime.now(UTC),
+            provider_version=args.provider_version,
+        )
+        _emit({"capture": manifest})
+        return 0
     providers = _providers(args)
     entitlements = _entitlements(providers)
     if args.command == "snapshot":

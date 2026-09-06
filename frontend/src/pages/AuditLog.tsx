@@ -1,16 +1,33 @@
 import { useEffect, useState } from 'react';
 import { api } from '../lib/api';
 import type { AuditLogEntry } from '../lib/types';
-import { Terminal, Search } from 'lucide-react';
+import { Search } from 'lucide-react';
 import { format } from 'date-fns';
 
 export function AuditLog() {
   const [logs, setLogs] = useState<AuditLogEntry[]>([]);
   const [filter, setFilter] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<{ code?: string; message: string } | null>(null);
 
-  useEffect(() => {
-    api.getAuditLog().then(setLogs);
-  }, []);
+  const load = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      setLogs(await api.getAuditLog());
+    } catch (reason) {
+      setError({
+        code: typeof reason === 'object' && reason !== null && 'code' in reason
+          ? String(reason.code)
+          : undefined,
+        message: reason instanceof Error ? reason.message : 'Unable to load the audit trail.',
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { void load(); }, []);
 
   const filteredLogs = logs.filter(log => 
     log.action.toLowerCase().includes(filter.toLowerCase()) || 
@@ -20,12 +37,11 @@ export function AuditLog() {
   );
 
   return (
-    <div className="p-8 max-w-7xl mx-auto h-screen flex flex-col space-y-4">
+    <div className="app-page flex min-h-screen flex-col space-y-5">
       <div>
-        <h2 className="text-2xl font-bold flex items-center gap-2">
-          <Terminal className="w-6 h-6" /> OTEL Trace & Audit Trail
-        </h2>
-        <p className="text-muted-foreground mt-1">Immutable ledger of every system and human decision.</p>
+        <p className="eyebrow">Accountability</p>
+        <h1 className="mt-1 text-2xl font-semibold">Audit trail</h1>
+        <p className="muted mt-2 text-sm">Immutable ledger of system and operator decisions.</p>
       </div>
 
       <div className="relative">
@@ -35,32 +51,41 @@ export function AuditLog() {
           placeholder="Filter by hash, action, approver..." 
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
-          className="w-full bg-card border border-border rounded-md pl-9 pr-4 py-2 text-sm focus:outline-none focus:border-primary transition-colors font-mono"
+          className="w-full border border-border bg-card py-2 pl-9 pr-4 font-mono text-sm focus:outline-none focus:border-primary"
         />
       </div>
 
-      <div className="flex-1 bg-black rounded-lg border border-border p-4 overflow-y-auto font-mono text-sm leading-relaxed shadow-inner">
-        {filteredLogs.length === 0 ? (
-          <div className="text-muted-foreground opacity-50">No logs found.</div>
+      <div className="data-table flex-1 overflow-y-auto bg-card p-4 font-mono text-sm leading-relaxed">
+        {loading ? (
+          <div className="animate-pulse text-muted-foreground">Loading audit entries…</div>
+        ) : error ? (
+          <div className="space-y-3 text-destructive">
+            <div>{error.code ? `${error.code}: ` : ''}{error.message}</div>
+            <button type="button" onClick={() => void load()} className="rounded bg-secondary px-3 py-1.5 text-xs font-semibold text-foreground">
+              Retry
+            </button>
+          </div>
+        ) : filteredLogs.length === 0 ? (
+          <div className="text-muted-foreground">No logs found. Run a scan or choose a broader filter.</div>
         ) : (
           filteredLogs.map(log => (
-            <div key={log.id} className="mb-2 pb-2 border-b border-white/5 hover:bg-white/5 transition-colors -mx-4 px-4">
+            <div key={log.id} className="mb-2 border-b border-border pb-2 hover:bg-muted">
               <div className="flex flex-wrap gap-x-4 text-xs text-muted-foreground mb-1">
                 <span>[{format(new Date(log.timestamp), 'yyyy-MM-dd HH:mm:ss')}]</span>
-                <span className="text-blue-400">trace:{log.trace_id}</span>
-                <span className="text-green-400">hash:{log.plan_hash.substring(0, 14)}...</span>
+                <span className="text-primary">trace:{log.trace_id}</span>
+                <span className="text-accent">hash:{log.plan_hash.substring(0, 14)}...</span>
               </div>
               <div className="flex gap-2">
-                <span className="text-warning font-bold w-32 shrink-0">{log.action.toUpperCase()}</span>
-                <span className="text-gray-300 flex-1">{log.details}</span>
+                <span className="text-warning w-32 shrink-0 font-semibold">{log.action}</span>
+                <span className="flex-1 text-foreground">{log.details}</span>
               </div>
-              <div className="text-xs text-gray-500 mt-1">
-                actor: <span className="text-gray-400">{log.approver || 'SYSTEM'}</span>
+              <div className="mt-1 text-xs text-muted-foreground">
+                Actor: <span className="text-foreground">{log.approver || 'System'}</span>
               </div>
             </div>
           ))
         )}
-        <div className="text-muted-foreground mt-4 animate-pulse">_</div>
+        <div className="mt-4 text-muted-foreground" aria-hidden="true">End of audit trail</div>
       </div>
     </div>
   );

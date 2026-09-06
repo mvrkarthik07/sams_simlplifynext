@@ -128,6 +128,56 @@ def test_github_pagination_revoke_restore_and_rate_headers() -> None:
 
 
 @pytest.mark.m5
+@respx.mock
+def test_github_iam_inventory_and_membership_operations() -> None:
+    base = "https://api.github.test"
+    respx.get(f"{base}/orgs/acme/members").mock(
+        return_value=httpx.Response(200, json=[{"login": "alice"}])
+    )
+    respx.get(f"{base}/orgs/acme/repos").mock(
+        return_value=httpx.Response(200, json=[{"name": "demo", "full_name": "acme/demo"}])
+    )
+    respx.get(f"{base}/orgs/acme/teams").mock(
+        return_value=httpx.Response(200, json=[{"name": "engineering", "slug": "engineering"}])
+    )
+    respx.get(f"{base}/orgs/acme/memberships/alice").mock(
+        return_value=httpx.Response(200, json={"login": "alice", "state": "active"})
+    )
+    respx.get(f"{base}/repos/acme/demo/collaborators/alice/permission").mock(
+        return_value=httpx.Response(200, json={"permission": "push"})
+    )
+    respx.put(f"{base}/orgs/acme/memberships/alice").mock(
+        return_value=httpx.Response(200, json={"login": "alice", "role": "member"})
+    )
+    respx.put(f"{base}/repos/acme/demo/collaborators/alice").mock(
+        return_value=httpx.Response(201, json={"permission": "push"})
+    )
+    respx.put(f"{base}/orgs/acme/teams/engineering/memberships/alice").mock(
+        return_value=httpx.Response(200, json={"role": "member"})
+    )
+    respx.delete(f"{base}/repos/acme/demo/collaborators/alice").mock(
+        return_value=httpx.Response(204)
+    )
+    respx.delete(f"{base}/orgs/acme/teams/engineering/memberships/alice").mock(
+        return_value=httpx.Response(204)
+    )
+    respx.delete(f"{base}/orgs/acme/memberships/alice").mock(return_value=httpx.Response(204))
+
+    provider = GitHubProvider("acme", "token", base_url=base)
+    assert provider.organization_members()[0]["login"] == "alice"
+    assert provider.repositories()[0]["full_name"] == "acme/demo"
+    assert provider.teams()[0]["slug"] == "engineering"
+    assert provider.membership("alice")["state"] == "active"
+    assert provider.repository_access("acme", "demo", "alice")["permission"] == "push"
+    assert provider.invite_member("alice")["role"] == "member"
+    assert provider.set_repository_access("acme", "demo", "alice", "push")["permission"] == "push"
+    assert provider.set_team_membership("engineering", "alice")["role"] == "member"
+    provider.remove_repository_access("acme", "demo", "alice")
+    provider.remove_team_membership("engineering", "alice")
+    provider.remove_member("alice")
+
+
+@pytest.mark.m5
 def test_cli_dry_run_commands_are_terminal_safe(capsys: pytest.CaptureFixture[str]) -> None:
     for command in ("snapshot", "detect", "plan", "execute", "rollback"):
         assert main([command, "--dry-run"]) == 0

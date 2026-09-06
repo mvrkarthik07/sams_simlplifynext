@@ -15,17 +15,19 @@ test('uses the low-cost state and storage primitives', () => {
   });
   template.resourceCountIs('AWS::S3::Bucket', 4);
   template.resourceCountIs('AWS::Events::EventBus', 1);
+  template.resourceCountIs('AWS::Events::Rule', 0);
+  template.resourceCountIs('AWS::Scheduler::Schedule', 0);
   template.hasResourceProperties('AWS::StepFunctions::StateMachine', { StateMachineType: 'STANDARD' });
 });
 
 test('enables Object Lock and one-day Lambda logs', () => {
   template.resourcePropertiesCountIs('AWS::S3::Bucket', { ObjectLockEnabled: true }, 3);
-  template.resourceCountIs('AWS::Logs::LogGroup', 6);
+  template.resourceCountIs('AWS::Logs::LogGroup', 8);
   template.hasResourceProperties('AWS::Logs::LogGroup', { RetentionInDays: 1 });
 });
 
-test('creates six connector credentials as SecureStrings', () => {
-  template.resourcePropertiesCountIs('AWS::SSM::Parameter', { Type: 'SecureString' }, 6);
+test('imports six connector credentials as pre-created SecureStrings', () => {
+  template.resourceCountIs('AWS::SSM::Parameter', 0);
 });
 
 test('keeps destructive IAM authority on the executor role only', () => {
@@ -45,5 +47,5 @@ test('has no API Gateway, ALB, VPC, NAT, or CloudFront resources', () => {
   for (const type of ['AWS::ApiGateway::RestApi', 'AWS::ElasticLoadBalancingV2::LoadBalancer', 'AWS::EC2::VPC', 'AWS::EC2::NatGateway', 'AWS::CloudFront::Distribution']) {
     template.resourceCountIs(type, 0);
   }
-  template.resourceCountIs('AWS::Lambda::Url', 1);
+  template.resourceCountIs('AWS::Lambda::Url', 3);
 });

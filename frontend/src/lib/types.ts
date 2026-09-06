@@ -10,7 +10,7 @@ export interface Entitlement {
   last_used_at: string | null;
   credential_type: CredentialType;
   revocable: boolean;
-  raw: Record<string, any>;
+  raw: Record<string, unknown>;
 }
 
 export type Tier = 'T0' | 'T1' | 'T2' | 'T3';
@@ -41,11 +41,15 @@ export interface Finding {
   tier: Tier;
   current_stage: PipelineStage;
   stage_status: StageStatus;
+  observe_only?: boolean;
   evidence: {
     days_unused: number | 'never';
     role_mismatch: boolean;
     blast_radius_count: number;
   };
+  source?: 'captured' | 'fixture';
+  captured_at?: string | null;
+  evaluated_at?: string;
 }
 
 export interface PlanAction {
@@ -80,4 +84,38 @@ export interface Metrics {
   approver_decision_time: string;
   reversibility: number;
   cost: number;
+  counts?: {
+    planted: number;
+    detected: number;
+    executed: number;
+    rollback_success: number;
+    revocations?: number;
+  };
+}
+
+export type ConnectionProvider = 'github' | 'salesforce' | 'workday';
+
+export interface ConnectionSummary {
+  provider: ConnectionProvider;
+  label: string;
+  status: 'connected' | 'not-configured';
+  configured_at: string | null;
+  last_tested_at: string | null;
+  record_count: number | null;
+  read_only: boolean;
+}
+
+export interface ConnectionTestResult extends ConnectionSummary {
+  message: string;
+  records: Array<{
+    identity_id: string;
+    resource: string;
+    scope: string;
+    credential_type: string;
+    revocable: boolean;
+  }>;
+}
+
+export interface ConnectionScanResult extends ConnectionTestResult {
+  dashboard_updated: boolean;
 }

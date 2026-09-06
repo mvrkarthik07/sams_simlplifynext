@@ -240,35 +240,34 @@ authenticated. Do not implement Salesforce username/password authentication.
 
 ### 6.3 Frontend status and backend liaison
 
-The SPA lives under `frontend/`. Its source components and state/routing/styling remain inherited.
-The only frontend code change made during the rename was adding the missing package script:
+The SPA lives under `frontend/`. Its routes and API data shapes remain inherited; the M12R owner
+exception permits the presentation refactor and auth shell. The package script remains:
 
 ```json
 "typecheck": "tsc -b"
 ```
 
-The SPA's `frontend/src/lib/api.ts` is still an in-memory mock. It exports these operations:
+The SPA's `frontend/src/lib/api.ts` uses the stable HTTP envelope and has no in-memory mock path. It exports these operations:
 `getFindings`, `getFinding`, `getPlan`, `getAuditLog`, `getMetrics`, `decideApproval`,
-`rerunDriftEngine`, and `executeRollback`. It makes no `fetch`, Axios, WebSocket, SSE, or polling
-requests and has no API base-URL environment variable.
+`rerunDriftEngine`, and `executeRollback`. The remote client uses `VITE_API_BASE`, an eight-second
+timeout, one network-only retry, and a Cognito ID-token bearer header when auth is enabled.
 
 Therefore the following are true:
 
 - Filesystem/build linkages between `frontend/` and `backend/` are correct and verified.
 - The frontend can be linted, typechecked, and built successfully.
-- The SPA is **not** yet proven to drive the backend over HTTP.
+- The SPA is wired to drive the backend over HTTP; the hosted browser rehearsal still needs to be
+  repeated after the auth-enabled redeploy.
 - A real browser → backend → provider end-to-end flow has **not** been completed.
-- Do not replace the frontend mock or edit components merely to make an integration test pass.
-  The integration blocker is recorded in `backend/artifacts/contract-gaps.md` and
-  `backend/DECISIONS.md` as `## BLOCKED: integration`. Any future exception must be limited to
-  the API client/types, be separately reviewed, and cite the PRD reason.
+- Keep API operation signatures and backend contracts stable. The M12R component-level exception
+  is recorded in `backend/DECISIONS.md`; no component change should alter the transport schema.
 
 The static contract evidence is in:
 
-- `backend/artifacts/contract-inventory.json` — zero frontend network calls; eight in-memory
-  client operations.
-- `backend/artifacts/contract-gaps.md` — three currently unused exported domain schemas and the
-  explicit transport blocker.
+- `backend/artifacts/contract-inventory.json` — eight exported client operations and their backend
+  routes.
+- `backend/artifacts/contract-gaps.md` — remaining unused exported domain schemas and any live
+  provider limitations.
 
 ### 6.4 Test and verification commands
 
@@ -359,3 +358,347 @@ build output are generated/ignored and must not be committed.
 When a future agent starts, first run `git status --short`, confirm the branch, read this section,
 read `backend/DECISIONS.md`, and run the smallest relevant gate before editing. If a requirement
 conflicts with this handoff or the PRD, record the decision before implementation.
+
+### 6.7 Current deployed demo handoff — 2026-09-06
+
+The owner deployed `DeadboltStack` successfully to AWS account `623234912950`, Region
+`us-east-1`, using the `hackathon` profile. The final CloudFormation status was
+`UPDATE_COMPLETE`. Schedules are disabled: `SchedulesEnabled=false`. Do not enable the hourly
+snapshot, budget, or HR schedules until real provider handlers, credentials, and authentication
+have been reviewed.
+
+Verified public demo outputs:
+
+```text
+Dashboard: http://deadboltstack-spabucket48e1059f-lkktwfgep3hp.s3-website-us-east-1.amazonaws.com
+API base:  https://lxrh6ikc4jyhzphnvvupuffkhq0uhuhk.lambda-url.us-east-1.on.aws/api
+MCP:       https://thabg6ly2uehff7x2yxvtci2qy0gscfp.lambda-url.us-east-1.on.aws/mcp
+```
+
+The dashboard returned HTTP 200, the API returned 21 fixture findings, and two consecutive
+MCP `initialize` requests returned HTTP 200. The MCP Lambda adapter was changed to construct a
+fresh stateless Streamable HTTP application per invocation because the FastMCP session manager is
+single-use and Lambda can reuse a warm process. The Lambda asset also includes
+`tests/fixtures/scenario/`, which is required by the deterministic scenario manifest.
+
+The deployed API and MCP endpoint are still fixture-only and unauthenticated public Function
+URLs. They must not receive real GitHub, AWS, Salesforce, Workday, Slack, or Notion credentials or
+customer data. The dashboard's GitHub rows are simulated findings. The real GitHub provider can
+currently be rehearsed locally, read-only, with:
+
+```bash
+cd backend
+export GITHUB_ORG=<org>
+read -rsp "GitHub PAT: " GITHUB_TOKEN; echo
+export GITHUB_TOKEN
+uv run python -m deadbolt.cli --system github --github-org "$GITHUB_ORG" --dry-run snapshot
+```
+
+Do not paste that output or the PAT into chat, source files, frontend code, CloudFormation
+parameters, or shell history. A future live GitHub dashboard requires authenticated API/MCP
+access, provider selection in the hosted handler, least-privilege secret retrieval, and a
+separate end-to-end rehearsal. Setting `GITHUB_TOKEN` on a laptop does not affect the deployed
+Lambda.
+
+#### Short-term cost estimate
+
+For leaving the current stack idle from approximately 2026-09-06 00:00 through 2026-09-07
+00:00 Asia/Singapore, the expected incremental cost is approximately **$0.00 to $0.05 USD**,
+assuming no unusual traffic and no unrelated resources in the account. A few manual dashboard or
+MCP requests should generally remain below **$0.10 USD** for that period. This is an estimate, not
+a billing guarantee; account-level free-tier usage, existing resources, data transfer, and the
+CDK bootstrap bucket are outside this stack's isolated estimate.
+
+Cost controls currently in effect:
+
+- Lambda has no idle hourly charge; functions are billed when invoked.
+- DynamoDB is pay-per-request with no provisioned capacity and no PITR.
+- S3 holds only small demo assets and one-day logs are configured for Lambda log groups.
+- Step Functions and EventBridge are idle; no schedules are enabled.
+- No EC2, NAT Gateway, RDS, OpenSearch, SageMaker endpoint, or load balancer is deployed by
+  this stack.
+
+Before leaving the account unattended, create a low-dollar AWS Budget alert. To stop charges and
+remove demo resources after the rehearsal, run from `backend/infra` with a refreshed profile:
+
+```bash
+export AWS_PROFILE=hackathon
+export AWS_DEFAULT_REGION=us-east-1
+aws sso login --profile hackathon  # only if the token is expired
+npx cdk destroy DeadboltStack --profile hackathon --region us-east-1 --force
+```
+
+The estimate is based on the official pricing models: [Lambda](https://aws.amazon.com/lambda/pricing/),
+[DynamoDB](https://aws.amazon.com/dynamodb/pricing/), [S3](https://aws.amazon.com/s3/pricing/),
+[CloudWatch](https://aws.amazon.com/cloudwatch/pricing/), [Step Functions](https://aws.amazon.com/step-functions/pricing/),
+and [EventBridge](https://aws.amazon.com/eventbridge/pricing/).
+
+### 6.8 M10–M14 completion handoff — 2026-09-06
+
+M10 through M13 are implemented and their repository gates pass. M12R presentation and the
+optional Cognito auth boundary are now implemented locally. The SPA API client uses the
+stable `data`/`error` envelope, eight-second timeout, one network-only retry, and the deployed
+API base from `VITE_API_BASE`; it always reads from the backend. The API Function URL CORS
+configuration permits the S3 website origin and local Vite origins for GET/POST requests, with
+Lambda Function URL preflight handling. The dashboard now shows loading, empty, retry, evaluated
+time, provenance, and deterministic plan-hash/plan-ID evidence. `backend/docs/DEMO_RUNBOOK.md`,
+`backend/docs/ARCHITECTURE.md`, and the root README describe the safe capture-backed public
+boundary; the currently published links still require a redeploy to receive these changes.
+
+Verified gates:
+
+```text
+make -f backend/GNUmakefile gate-m10  # pass
+make -f backend/GNUmakefile gate-m11  # pass; live capture remains credential-blocked
+make -f backend/GNUmakefile gate-m12  # pass
+make -f backend/GNUmakefile gate-m13  # pass
+```
+
+The non-live suite is 130 passed with 85.22% coverage. A redacted GitHub capture is present at
+`backend/artifacts/captures/github.json`; capture-configured API and MCP processes use that
+four-record dataset, while the fixture scenario remains available for offline tests. The new stack
+provisions Cognito and validates bearer tokens at API/MCP boundaries
+when deployed with `-c requireAuth=true`; the current hosted links predate this change and remain
+legacy public links until redeployed. M14's authenticated live GitHub provider path is still not
+implemented because SSM PAT retrieval, expiring fine-grained PAT, and separate rehearsal
+prerequisites are not verified. Deployment still requires `aws sso login --profile hackathon` when
+the cached token is expired.
+
+### 6.9 Connection onboarding and P0 review follow-up — 2026-09-06
+
+The owner-approved frontend exception now includes `frontend/src/pages/Connections.tsx` and its
+route. Authenticated operators can save GitHub, Salesforce JWT, and Workday read credentials through
+the API; deployed storage is SSM SecureString under a subject-hashed path, and responses never
+contain secret fields. The connection test invokes only provider `snapshot()`; it performs no write.
+Unauthenticated Lambda requests to `/api/connections` are rejected even if the legacy auth flag is
+off. Local rehearsals use an in-memory connection store.
+
+The dashboard now exposes the non-revocable entitlement's forced T0 observe-only override, reports
+zero-denominator metrics with explicit counts, and discloses uniform score evidence. The current
+GitHub capture still has one repository and read-level permissions, so score variance requires a
+new owner-approved throwaway capture; no synthetic variance was added.
+
+### 6.10 m16 completion — dashboard scoring fix and frontend rework — 2026-09-06
+
+`backend/prompts/m16.md` (nine dashboard-quality tasks) is implemented end to end, under the same
+owner-approved frontend exception as M12R/6.9. Two backend scoring gaps were also fixed as part of
+tracing m16/01 and m16/07 — real fixes, not synthetic variance, so the last paragraph of §6.9 is
+superseded on the specific point that no variance had been added:
+
+- `scenarios/priya.py`'s fixture data scored correctly but was structurally uniform (dormancy,
+  role mismatch, and blast radius were all pegged to a constant across every planted finding), so
+  every finding landed in tier T2. Three `scope` values in `manifest.json` and the matching provider
+  fixture JSON were changed (not the identity/system/resource keys, not the planted-finding count)
+  so the 20-finding fixture now spans all four tiers. See the `2026-09-06 — m16` entries in
+  `backend/DECISIONS.md` for the exact fields and the score math.
+- The **live capture path** (`DEADBOLT_CAPTURE_DIR` + a real GitHub capture) reproduced the m16
+  prompt's literal symptoms verbatim against a real local rehearsal: every row scored 49, and one
+  row's resource read as `github:pat:mvrkarthik07`. Root cause: `_scenario_from_capture` in
+  `api.py` hardcoded `reachability={}` for every real capture, even though a real, computable
+  co-occurrence signal exists in the capture itself. Added `_reachability_from_snapshot` to derive
+  it instead of fabricating one. `templates={}` and the null `last_used_at` were left alone —
+  GitHub's collaborator API doesn't expose usage timestamps and there is no role-template source
+  for a bare PAT scan, so those stay honestly unmeasured rather than synthesized.
+
+Frontend, per m16 task (`frontend/src/pages/Dashboard.tsx`, `frontend/src/styles/tokens.css`,
+`frontend/src/components/Sidebar.tsx`, `frontend/src/App.tsx`):
+
+- **01** Tier badge split into its own sortable column; risk score renders with a named-constant
+  band label (`RISK_BANDS`, thresholds 30/60/85) and a non-color height-proportional bar.
+- **02** KPI strip models `measured` / `no-events` / `not-wired` explicitly from `metrics.counts`;
+  no metric ever renders a bare `0` for "nothing happened," measured values carry sample sizes with
+  a low-sample qualifier under `n=10`, and the primary metric (drift recall) is visually emphasized.
+- **03** Per-row accessible names naming the finding ID and identity, `aria-sort` plus an
+  ascending/descending label on sort headers; contrast was measured before any change (only the old
+  amber tier-2 badge at 4.23:1 actually failed the 4.5:1 floor — recorded, then fixed by the new
+  ramp below).
+- **04** A bulk-select-with-undo feature was built, verified working (real 6-second undo-before-send
+  window, confirmation dialog, selection persistence), then **removed entirely** at the owner's
+  explicit direction after a live review — the table has no selection column and no bulk action bar.
+- **05** Filter chips split into two labeled `role="group"` axes (tier, source) with live per-chip
+  counts computed in one traversal, zero-count chips disabled, active chip marked with a check glyph.
+- **06/09** Sidebar collapses to an icon rail below 768px (labels visually hidden, not removed from
+  the accessibility tree). Fixed a real flexbox bug where the table's old `min-width` forced the
+  entire page layout wider than the viewport and pushed the sidebar off-screen (`main` needed
+  `min-width: 0`, since flex items default to `min-width: auto`). Per an explicit owner follow-up
+  ("I DO NOT WANT TO SEE HORIZONTAL SCROLL AT ALL"), the table no longer scrolls horizontally at
+  any width: `table-layout: fixed` plus `overflow-wrap: break-word` keeps it within its container
+  above 860px, and below 860px it renders as one labeled card per finding instead of a table row.
+  Verified via `document.documentElement.scrollWidth` at a live narrow viewport — no overflow.
+- **07** Removed the two ALL-CAPS eyebrows on the dashboard, gave each KPI caption distinct
+  phrasing instead of one repeated template, replaced the two boilerplate subtitles, restricted
+  monospace to numerals/identifiers. `github:pat:mvrkarthik07` (a real value from the live capture,
+  not a hypothetical) is now humanized to "Personal access token — mvrkarthik07" in the table; the
+  raw URN is shown only on the finding detail page.
+- **08** `tokens.css` restructured into primitive → semantic → component layers. Replaced the old
+  three-arbitrary-hue tier ramp (gray/green/orange/red) with one contrast-verified warm ramp
+  (neutral → amber → orange → red, ≥4.5:1 in both themes against both background tokens), which also
+  separates the three previously-conflated uses of green (connection status, the "Live" badge,
+  tier-1) into distinct semantic tokens.
+
+Verified: `npm run typecheck`, `npm run lint` (one pre-existing `set-state-in-effect` warning,
+unchanged, shared with `AuditLog.tsx`/`Connections.tsx`), `npm run build`, `uv run pytest -q -m
+"not live"` (130 passed), and `make lint types arch`. Live-browser-checked against the real
+captured-data local rehearsal (`DEADBOLT_ENVELOPE=1 DEADBOLT_CAPTURE_DIR=artifacts/captures uv run
+python -m deadbolt.api`) in both themes, including catching and fixing one real bug live (an
+unreadable dark-on-dark Cancel button, since removed along with the rest of the bulk-select UI).
+Narrow-viewport behavior below roughly 600px was live-verified in-session; nothing was committed —
+`git status` still shows the full set of modified/untracked files from this and prior sessions.
+
+### 6.11 Current handoff — authenticated deployment and GitHub IAM MCP — 2026-09-06
+
+This section supersedes stale deployment statements in sections 6.7–6.10. The repository now
+contains an authenticated operator workflow and a scoped live GitHub IAM MCP surface. The latest
+local code has been fully checked but must be redeployed before the hosted URLs contain these
+latest changes.
+
+#### Hosted AWS outputs
+
+The hackathon account is `623234912950`, region `us-east-1`, and the deployment profile is
+`hackathon`. The last successful deployment emitted these URLs and identifiers:
+
+```text
+Dashboard: http://deadboltstack-spabucket48e1059f-lkktwfgep3hp.s3-website-us-east-1.amazonaws.com
+API base:  https://lxrh6ikc4jyhzphnvvupuffkhq0uhuhk.lambda-url.us-east-1.on.aws/api
+MCP:       https://thabg6ly2uehff7x2yxvtci2qy0gscfp.lambda-url.us-east-1.on.aws/mcp
+S3 bucket: deadboltstack-spabucket48e1059f-lkktwfgep3hp
+Cognito pool: us-east-1_BMRnSNVGV
+Cognito client: 2b37s74k262a4lrr5t27i2q5kp
+```
+
+The stack was deployed with `requireAuth=true` and `enableSchedules` false. Lambda Function URLs
+remain transport-level `NONE`, but the API and MCP handlers validate Cognito ID-token bearer
+headers. The API CORS response is owned by the Lambda Function URL configuration; the handler must
+not add a second `Access-Control-Allow-Origin` header.
+
+#### Redeploy the current code
+
+Build the frontend with the deployed API and Cognito values before CDK deployment. CDK packages
+the existing `frontend/dist`; the explicit S3 sync makes the final asset publication unambiguous.
+
+```bash
+cd /Users/karthik/sams_simlplifynext/frontend
+VITE_API_BASE="https://lxrh6ikc4jyhzphnvvupuffkhq0uhuhk.lambda-url.us-east-1.on.aws/api" \
+VITE_AUTH_REQUIRED=1 \
+VITE_COGNITO_REGION=us-east-1 \
+VITE_COGNITO_USER_POOL_ID=us-east-1_BMRnSNVGV \
+VITE_COGNITO_CLIENT_ID=2b37s74k262a4lrr5t27i2q5kp \
+npm run build
+
+cd ../backend/infra
+npx cdk deploy DeadboltStack --profile hackathon --region us-east-1 \
+  --require-approval never -c requireAuth=true
+aws s3 sync ../../frontend/dist s3://deadboltstack-spabucket48e1059f-lkktwfgep3hp \
+  --delete --profile hackathon --region us-east-1
+```
+
+Do not pass `-c enableSchedules=true` for the hackathon rehearsal. The CDK warning about the
+DynamoDB `pointInTimeRecovery` property is a deprecation warning, not a deployment failure.
+
+#### Operator authentication and provider storage
+
+The login screen supports Cognito self-registration with email confirmation. Existing operator
+accounts are stored in Cognito. The browser stores only the short-lived Cognito ID token in
+`sessionStorage`; it is sent as a bearer token to the API and MCP and expires. Provider secrets
+are separate: GitHub PATs, Salesforce keys, and Workday tokens are sent over HTTPS to the
+authenticated API and stored as operator-scoped SSM `SecureString` parameters under:
+
+```text
+/deadbolt/connections/<sha256(cognito_subject)[:32]>/<provider>
+```
+
+Provider secrets must never be returned to the browser, logged, placed in frontend builds, or
+pasted into chat. Local development uses `MemoryConnectionStore` and is intentionally not
+persistent; deployed Lambda uses `SsmConnectionStore`.
+
+#### Live GitHub IAM MCP surface
+
+After an operator saves a GitHub connection in **Connections**, the authenticated MCP Lambda reads
+that operator's GitHub configuration from SSM. The MCP Lambda now has the same least-privilege SSM
+read permission as the API Lambda. Salesforce and Workday remain connected/read-only paths and do
+not receive MCP write tools in this milestone.
+
+Available GitHub tools:
+
+- `github_inventory`: organization members, repositories, and teams.
+- `github_user_access`: one user's organization membership and effective captured access.
+- `github_onboard_user`: invite/activate an organization member, assign a repository permission,
+  and add team memberships.
+- `github_remove_repository_access`: remove direct repository collaborator access.
+- `github_remove_team_access`: remove a user from a team.
+- `github_remove_organization_member`: remove a user from the organization.
+
+GitHub repository permissions supported by the onboarding tool are `pull`, `triage`, `push`,
+`maintain`, and `admin`; organization roles are `member` and `admin`; team roles default to
+`member` in this surface. Every write is two-step: call the tool without confirmation to receive a
+canonical plan and `plan_hash`, then call it again with the same arguments, that hash, and
+`confirm=true`. A natural-language request must never bypass this confirmation boundary.
+
+The connected GitHub credential must have organization membership/team administration and
+repository administration permissions sufficient for the requested operation. Use a throwaway
+organization and short-lived credential for rehearsals. The implementation deliberately excludes
+billing, organization ownership, security settings, PAT/SSH-key management, repository deletion,
+and other unrelated destructive administration.
+
+Example MCP rehearsal sequence:
+
+```text
+github_inventory()
+github_user_access(username="new-dev")
+github_onboard_user(
+  username="new-dev",
+  repositories=["deadboltSAMS/testrepo123"],
+  permission="pull",
+  organization_role="member",
+  teams=[]
+)
+# inspect returned plan_hash, then repeat with confirm=true and expected_plan_hash=<hash>
+```
+
+The deployed MCP endpoint requires the Cognito ID token. A safe negative check is an unauthenticated
+request that returns `401`. For an authenticated manual check, copy the token only locally from the
+logged-in browser session and call MCP Streamable HTTP with `Accept: application/json, text/event-stream`.
+Never commit or share the token.
+
+#### Verification status
+
+The latest local verification is:
+
+```text
+133 non-live backend tests passed
+85.00% coverage threshold reached
+ruff, mypy --strict, and import-linter passed
+frontend lint, typecheck, and production build passed
+infra tests: 5 passed
+CDK synth passed
+protected-path guard passed
+```
+
+The frontend lint command reports three existing `react(set-state-in-effect)` warnings in
+`AuditLog.tsx`, `Connections.tsx`, and `Dashboard.tsx`; they do not fail the gate. The CDK synth
+reports the existing DynamoDB deprecation and unconfigured feature-flag warnings; neither blocks
+deployment.
+
+#### Recommended demo narrative
+
+Use a throwaway GitHub organization with at least one test repository and a test account. The
+operator signs in, configures the GitHub connection, inspects the inventory, asks MCP to preview
+onboarding for a new developer, reviews the returned organization/repository/team plan, and then
+explicitly confirms it. Follow with `github_user_access` to verify the resulting membership and
+repository role. Use the dashboard for the visual drift review and audit trail. Do not claim that
+Salesforce or Workday perform live writes, and do not present fixture-only approval/rollback as a
+real provider mutation.
+
+#### Cost and cleanup
+
+Schedules are disabled, Lambda is on-demand, DynamoDB is pay-per-request, and CloudWatch logs are
+retained for one day. Idle cost should remain very low, but create a low-dollar AWS Budget alert
+and destroy the rehearsal stack when finished:
+
+```bash
+cd /Users/karthik/sams_simlplifynext/backend/infra
+npx cdk destroy DeadboltStack --profile hackathon --region us-east-1 --force
+```
+
+Object Lock buckets and the CDK bootstrap resources may require separate cleanup or retention
+checks. Never destroy unrelated resources in the hackathon account.
