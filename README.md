@@ -11,7 +11,7 @@
 <p align="center">
   <a href="http://deadboltstack-spabucket48e1059f-lkktwfgep3hp.s3-website-us-east-1.amazonaws.com">Open the live dashboard</a>
   ·
-  <a href="https://drive.google.com/file/d/DEMO_VIDEO_ID/view?usp=sharing">Watch the demo video</a>
+  <a href="https://drive.google.com/file/d/1eZoLrtGMZr_8S_L2d1frgGzcuY9qWuSE/view?usp=sharing">Watch the demo video</a>
   ·
   <a href="backend/docs/DEMO_RUNBOOK.md">Run the demo locally</a>
 </p>
@@ -28,9 +28,9 @@ Deadbolt turns access drift into a reviewable queue. It normalizes entitlements 
 | --- | --- | --- |
 | Dashboard | [Open Entitlement register](http://deadboltstack-spabucket48e1059f-lkktwfgep3hp.s3-website-us-east-1.amazonaws.com) | Capture provenance, risk rails, grouped identities, plans, and review decisions |
 | MCP | `https://thabg6ly2uehff7x2yxvtci2qy0gscfp.lambda-url.us-east-1.on.aws/mcp` | Query findings, inspect plans, read metrics, and review the audit log |
-| Demo video | [Watch on Google Drive](https://drive.google.com/file/d/DEMO_VIDEO_ID/view?usp=sharing) | A short operator walkthrough from capture to audited decision |
+| Demo video | [Watch on Google Drive](https://drive.google.com/file/d/1eZoLrtGMZr_8S_L2d1frgGzcuY9qWuSE/view?usp=sharing) | A short operator walkthrough from capture to audited decision |
 
-The hosted demo uses Cognito login and a redacted GitHub capture. It contains no customer data or provider credentials. The Google Drive URL is the shared-video slot for the team demo; replace `DEMO_VIDEO_ID` with the file ID of the uploaded recording before distribution.
+The hosted demo uses Cognito login and a redacted GitHub capture. It contains no customer data or provider credentials.
 
 ## The product loop
 
