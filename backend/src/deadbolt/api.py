@@ -488,6 +488,15 @@ class DemoApi:
             allowed_actions = {"Approve", "Reduce further", "Keep, with reason", "Defer 30 days"}
             if action_name not in allowed_actions:
                 raise ValueError(f"unsupported approval action: {action_name}")
+            if action is None and action_name == "Keep, with reason" and finding.observe_only:
+                self._append_audit(
+                    action_name,
+                    approver,
+                    "Observe-only access retained; no provider mutation was requested.",
+                    reason=reason,
+                )
+                self._persist_state()
+                return self.finding(finding_id)
             if action is None and action_name in {"Approve", "Reduce further", "Keep, with reason"}:
                 raise ValueError("finding has no executable plan action")
 

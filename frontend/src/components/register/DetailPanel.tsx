@@ -317,7 +317,9 @@ export default function DetailPanel({
                     loading ||
                     busy ||
                     !plan ||
-                    (action.wire !== 'Defer 30 days' && !executable) ||
+                    (action.wire !== 'Defer 30 days' &&
+                      !(action.wire === 'Keep, with reason' && finding.observe_only) &&
+                      !executable) ||
                     (action.wire === 'Keep, with reason' && !reason.trim())
                   }
                   onClick={() =>
