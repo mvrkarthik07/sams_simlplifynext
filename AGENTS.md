@@ -776,3 +776,6 @@ availability errors; once Claude access is enabled, it remains the preferred pro
 The GitHub dashboard scan now includes paginated team memberships as observe-only entitlements
 (`team:<org>/<slug>`). A new authenticated GitHub scan is required to promote newly added teams
 into the persisted register; browser refresh alone cannot discover provider changes.
+
+The header refresh icon now invokes that authenticated provider scan and then reloads the promoted
+register. The deployed SPA bundle was rebuilt with the absolute API URL after this change.

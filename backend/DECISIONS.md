@@ -795,3 +795,19 @@ revocable before a team-specific executor/pre-image path exists.
 
 **Reversal cost:** Low; remove the team-membership emission while retaining the provider's existing
 MCP team inventory and write operations.
+
+## 2026-09-07 — register — Make the header refresh perform a provider capture
+
+**Ambiguity:** The header refresh icon was wired to reload the persisted register, while the
+separate empty/stale action performed an authenticated provider scan. Operators reasonably expect
+the prominent refresh control to discover newly added access.
+
+**Chose:** Wire the header refresh to the existing read-only `scanConnection` flow, then reload the
+register from the promoted snapshot. Fixture mode continues to route to Connections because it has
+no live provider to scan.
+
+**Rejected:** Re-running a provider scan on every GET or browser refresh, which would add latency
+and unnecessary provider/API traffic.
+
+**Reversal cost:** Low; restore the read-only reload if the header gains separate reload and capture
+controls.

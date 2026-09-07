@@ -457,7 +457,7 @@ function Register() {
             ) : null}
             <button
               className="register-icon-button"
-              onClick={() => void load()}
+              onClick={() => void runCapture()}
               disabled={loading || refreshing}
               aria-label={refreshing ? 'Refreshing capture' : 'Refresh capture'}
               title="Refresh capture"
