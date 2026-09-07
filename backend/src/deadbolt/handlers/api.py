@@ -6,6 +6,7 @@ import base64
 import json
 import os
 from collections.abc import Mapping
+from functools import lru_cache
 from typing import Final, cast
 
 from deadbolt.api import DemoApi, dynamo_register_state_store
@@ -19,12 +20,16 @@ _HTTP_BAD_REQUEST: Final[int] = 400
 _HTTP_NOT_FOUND: Final[int] = 404
 _HTTP_NO_CONTENT: Final[int] = 204
 _HTTP_UNAUTHORIZED: Final[int] = 401
-_LAMBDA_SERVICE = DemoApi(
-    capture_dir=os.environ.get("DEADBOLT_CAPTURE_DIR"),
-    connection_service=ConnectionService(SsmConnectionStore()),
-    state_store=dynamo_register_state_store(os.environ.get("DEADBOLT_GRAPH_TABLE_NAME")),
-)
 _JsonObject = dict[str, object]
+
+
+@lru_cache(maxsize=1)
+def _service() -> DemoApi:
+    return DemoApi(
+        capture_dir=os.environ.get("DEADBOLT_CAPTURE_DIR"),
+        connection_service=ConnectionService(SsmConnectionStore()),
+        state_store=dynamo_register_state_store(os.environ.get("DEADBOLT_GRAPH_TABLE_NAME")),
+    )
 
 
 def _envelope(data: object, error: _JsonObject | None) -> _JsonObject:
@@ -89,7 +94,7 @@ def lambda_handler(event: Mapping[str, object], context: object | None = None) -
             return {"statusCode": _HTTP_NO_CONTENT, "headers": _JSON_HEADERS, "body": ""}
         if path.startswith("/api/connections") and subject is None:
             raise AuthenticationError("authentication required")
-        status, value = _LAMBDA_SERVICE.handle(method, path, payload, subject=subject)
+        status, value = _service().handle(method, path, payload, subject=subject)
         if status >= _HTTP_BAD_REQUEST:
             if status == _HTTP_NOT_FOUND:
                 return _response(status, error=_error("NOT_FOUND", "resource not found"))
