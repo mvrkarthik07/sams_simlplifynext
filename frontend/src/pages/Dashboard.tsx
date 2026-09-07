@@ -25,7 +25,7 @@ import Search from 'lucide-react/dist/esm/icons/search.mjs';
 import LockKeyhole from 'lucide-react/dist/esm/icons/lock-keyhole.mjs';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
-import { isUnauthenticatedMode } from '../lib/auth';
+import { consumeCaptureAfterLogin, isUnauthenticatedMode } from '../lib/auth';
 import type { Finding, Metrics, ConnectionProvider } from '../lib/types';
 import {
   absoluteTime,
@@ -357,11 +357,7 @@ function Register() {
       setSubmitting(false);
     }
   };
-  const runCapture = async () => {
-    if (!view.captured) {
-      navigate('/connections');
-      return;
-    }
+  const runCapture = useCallback(async (redirectIfMissing = true) => {
     setRefreshing(true);
     try {
       const connections = await api.getConnections();
@@ -369,19 +365,25 @@ function Register() {
         (connection) =>
           connection.status === 'connected' &&
           view.systems.has(connection.provider),
-      );
+      ) ?? connections.find((connection) => connection.status === 'connected');
       if (!configured) {
-        navigate('/connections');
+        if (redirectIfMissing) navigate('/connections');
         return;
       }
       await api.scanConnection(configured.provider as ConnectionProvider);
       await load();
+      setToast({ text: `${configured.label} capture loaded.` });
     } catch (reason) {
       setError(errorMessage(reason));
     } finally {
       setRefreshing(false);
     }
-  };
+  }, [load, navigate, view.systems]);
+  useEffect(() => {
+    if (consumeCaptureAfterLogin()) {
+      void Promise.resolve().then(() => runCapture(false));
+    }
+  }, [runCapture]);
 
   const groupRows =
     view.count > 200 ? (

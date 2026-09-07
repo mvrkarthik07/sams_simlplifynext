@@ -16,6 +16,7 @@ interface CognitoSignUpResult {
 }
 
 const SESSION_KEY = 'deadbolt.auth.session';
+const CAPTURE_AFTER_LOGIN_KEY = 'deadbolt.capture-after-login';
 export const authRequired = import.meta.env.VITE_AUTH_REQUIRED === '1';
 const region = String(import.meta.env.VITE_COGNITO_REGION ?? '');
 const userPoolId = String(import.meta.env.VITE_COGNITO_USER_POOL_ID ?? '');
@@ -25,6 +26,13 @@ export const isAuthConfigured = authRequired && Boolean(region && userPoolId && 
 export const isUnauthenticatedMode = !authRequired;
 
 const sessionStorageAvailable = (): boolean => typeof window !== 'undefined' && Boolean(window.sessionStorage);
+
+export function consumeCaptureAfterLogin(): boolean {
+  if (!sessionStorageAvailable()) return false;
+  const pending = window.sessionStorage.getItem(CAPTURE_AFTER_LOGIN_KEY) === '1';
+  if (pending) window.sessionStorage.removeItem(CAPTURE_AFTER_LOGIN_KEY);
+  return pending;
+}
 
 export function getSession(): AuthSession | null {
   if (!sessionStorageAvailable()) return null;
@@ -91,6 +99,7 @@ export async function signIn(username: string, password: string): Promise<AuthSe
     expiresAt: Date.now() + (result.AuthenticationResult.ExpiresIn ?? 3600) * 1000,
   };
   window.sessionStorage.setItem(SESSION_KEY, JSON.stringify(session));
+  window.sessionStorage.setItem(CAPTURE_AFTER_LOGIN_KEY, '1');
   return session;
 }
 
