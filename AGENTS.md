@@ -752,3 +752,11 @@ continue to use an injected in-memory store and do not contact AWS.
 The regression test covers approve → scan → cold-start reload. `make gate-m12r && make guard` passes
 with 139 non-live tests and 85.08% coverage. Redeploy the API stack with `requireAuth=true`, then
 rebuild/sync the SPA if the deployed bucket needs the matching frontend bundle.
+
+### 6.14 Decision submission timing hotfix — 2026-09-07
+
+The register previously waited eight seconds before sending an approval, which meant a browser
+reload during the Undo window silently discarded the decision and restored the last persisted
+capture. Decisions now send immediately, update the row optimistically, and retain an eight-second
+Undo action after the API confirms the mutation. The deployed SPA must be rebuilt and synced after
+this change.

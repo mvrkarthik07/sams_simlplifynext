@@ -347,7 +347,7 @@ export default function DetailPanel({
             </div>
             {pendingLabel ? (
               <div className="pending-decision">
-                <p>{pendingLabel} scheduled. Sending after 8 seconds.</p>
+                <p>{pendingLabel} recorded. Undo is available for 8 seconds.</p>
                 <button className="register-button" onClick={onUndo}>
                   Undo
                 </button>

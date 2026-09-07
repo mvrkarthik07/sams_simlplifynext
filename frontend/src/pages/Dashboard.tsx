@@ -107,7 +107,6 @@ interface PendingDecision {
   action: string;
   label: string;
   reason: string;
-  expires: number;
 }
 interface Toast {
   text: string;
@@ -277,56 +276,86 @@ function Register() {
     });
   }, []);
   const scheduleDecision = useCallback(
-    (finding: Finding, action: string, label: string, reason = '') => {
-      if (pendingTimer.current || submitting) return;
+    async (finding: Finding, action: string, label: string, reason = '') => {
+      if (pending || submitting) return;
       setToast(null);
-      setPending({
-        finding,
-        action,
-        label,
-        reason,
-        expires: Date.now() + 8000,
-      });
-      pendingTimer.current = setTimeout(async () => {
-        pendingTimer.current = null;
-        setPending(null);
-        setSubmitting(true);
-        try {
-          const updated =
-            action === 'rollback'
-              ? await api.executeRollback(finding.finding_id)
-              : await api.decideApproval(
-                  finding.finding_id,
-                  action,
-                  'Access Reviewer',
-                  reason,
-                );
-          setPayload((current) => ({
-            ...current,
-            findings: current.findings.map((item) =>
-              item.finding_id === updated.finding_id ? updated : item,
-            ),
-          }));
-          setToast({ text: `${label} recorded for ${finding.finding_id}.` });
-        } catch (reason) {
-          setToast({
-            text: `${label} was not recorded. ${errorMessage(reason)}`,
-            error: true,
-          });
-        } finally {
-          setSubmitting(false);
-        }
-      }, 8000);
+      setSubmitting(true);
+      const optimistic =
+        action === 'rollback'
+          ? { ...finding, current_stage: 'Rolled back' as const, stage_status: 'rolled-back' as const }
+          : action === 'Approve'
+            ? { ...finding, current_stage: 'Verified' as const, stage_status: 'passed' as const }
+            : action === 'Defer 30 days'
+              ? { ...finding, current_stage: 'Planned' as const, stage_status: 'passed' as const }
+              : finding;
+      setPayload((current) => ({
+        ...current,
+        findings: current.findings.map((item) =>
+          item.finding_id === finding.finding_id ? optimistic : item,
+        ),
+      }));
+      try {
+        const updated =
+          action === 'rollback'
+            ? await api.executeRollback(finding.finding_id)
+            : await api.decideApproval(
+                finding.finding_id,
+                action,
+                'Access Reviewer',
+                reason,
+              );
+        setPayload((current) => ({
+          ...current,
+          findings: current.findings.map((item) =>
+            item.finding_id === updated.finding_id ? updated : item,
+          ),
+        }));
+        setToast({ text: `${label} recorded for ${finding.finding_id}.` });
+        setPending({ finding: updated, action, label, reason });
+        pendingTimer.current = setTimeout(() => {
+          pendingTimer.current = null;
+          setPending(null);
+        }, 8000);
+      } catch (cause) {
+        setPayload((current) => ({
+          ...current,
+          findings: current.findings.map((item) =>
+            item.finding_id === finding.finding_id ? finding : item,
+          ),
+        }));
+        setToast({
+          text: `${label} was not recorded. ${errorMessage(cause)}`,
+          error: true,
+        });
+      } finally {
+        setSubmitting(false);
+      }
     },
-    [submitting],
+    [pending, submitting],
   );
-  const undo = () => {
+  const undo = async () => {
+    if (!pending || submitting) return;
     if (pendingTimer.current) clearTimeout(pendingTimer.current);
     pendingTimer.current = null;
-    setToast({
-      text: `${pending?.label ?? 'Decision'} canceled. No change was sent.`,
-    });
     setPending(null);
+    setSubmitting(true);
+    try {
+      const restored = await api.executeRollback(pending.finding.finding_id);
+      setPayload((current) => ({
+        ...current,
+        findings: current.findings.map((item) =>
+          item.finding_id === restored.finding_id ? restored : item,
+        ),
+      }));
+      setToast({ text: `${pending.label} undone for ${pending.finding.finding_id}.` });
+    } catch (cause) {
+      setToast({
+        text: `Undo was not recorded. ${errorMessage(cause)}`,
+        error: true,
+      });
+    } finally {
+      setSubmitting(false);
+    }
   };
   const runCapture = async () => {
     if (!view.captured) {
@@ -730,7 +759,7 @@ function Register() {
         <div className={`register-toast${toast?.error ? ' toast-error' : ''}`}>
           <p>
             {pending
-              ? `${pending.label} scheduled for ${pending.finding.finding_id}. Sending after 8 seconds.`
+              ? `${pending.label} recorded for ${pending.finding.finding_id}. Undo is available for 8 seconds.`
               : toast?.text}
           </p>
           {pending ? (

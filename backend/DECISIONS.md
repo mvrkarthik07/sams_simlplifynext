@@ -678,6 +678,23 @@ preview, the current plan hash, and confirmation.
 **Reversal cost:** Low; restore the required repository validation and remove the discovery branch,
 then redeploy the API and frontend.
 
+## 2026-09-07 — auth — Add Cognito OAuth login for remote MCP clients
+
+**Ambiguity:** The existing MCP boundary authenticated manually copied Cognito ID tokens, while
+remote MCP clients support browser OAuth and automatic credential refresh.
+
+**Chose:** Add a Cognito managed-login domain and a separate public authorization-code + PKCE app
+client with a fixed localhost callback. The MCP Lambda publishes protected-resource metadata and
+returns a `WWW-Authenticate` challenge so clients can discover Cognito. MCP accepts the new
+Cognito access token and temporarily retains the existing dashboard ID-token path for backward
+compatibility. The dashboard web client and API behavior remain unchanged.
+
+**Rejected:** Removing MCP authentication, putting provider PATs in MCP configuration, or making
+users copy Cognito tokens into every client.
+
+**Reversal cost:** Medium; remove the Cognito domain/client and metadata routes, restore the
+ID-token-only MCP validator, and redeploy the stack. The user pool and dashboard client can remain.
+
 ## 2026-09-07 — m12r — Refine the entitlement register under owner authorization
 
 **Ambiguity:** The owner requests frontend implementation despite the standing read-only default; the requested 12-row review fixture conflicts with the PRD's 20-planted-finding demo. Some specified primitive colors cannot meet the requested text contrast floor on every interaction surface. The API has no general undo operation or anonymous live capture operation.
@@ -714,3 +731,18 @@ browser alone, or rerunning a live GitHub scan on every GET request.
 
 **Reversal cost:** Medium; remove the register state item, environment variable, IAM grant, and
 restore the in-memory adapter if a dedicated capture/state repository replaces it.
+
+## 2026-09-07 — register — Submit decisions immediately before the Undo window
+
+**Ambiguity:** The prior eight-second cancellation window was implemented by delaying the API
+request, so a browser reload could discard an approval even though the row looked changed.
+
+**Chose:** Send the decision immediately, render the confirmed result optimistically, and keep an
+eight-second post-confirmation Undo action. Undo uses the existing rollback endpoint and the API
+continues to persist the resulting stage.
+
+**Rejected:** Delaying the mutation, which loses user decisions on navigation or refresh, or
+automatically rescanning GitHub on every page load.
+
+**Reversal cost:** Low; restore the delayed client flow if the product adopts a transactional
+approval queue with a server-side cancellation token.
