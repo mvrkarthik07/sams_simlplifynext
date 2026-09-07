@@ -772,3 +772,7 @@ is still required after refreshing the expired `hackathon` AWS credentials.
 The deployed account currently reports Claude Haiku as unavailable and Nova Lite as available. The
 Bedrock adapter therefore retries Claude prose requests with Nova Lite only on model access or
 availability errors; once Claude access is enabled, it remains the preferred prose model.
+
+The GitHub dashboard scan now includes paginated team memberships as observe-only entitlements
+(`team:<org>/<slug>`). A new authenticated GitHub scan is required to promote newly added teams
+into the persisted register; browser refresh alone cannot discover provider changes.

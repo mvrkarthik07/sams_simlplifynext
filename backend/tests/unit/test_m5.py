@@ -107,6 +107,20 @@ def test_github_pagination_revoke_restore_and_rate_headers() -> None:
     respx.get(f"{base}/repos/acme/demo/collaborators").mock(
         return_value=httpx.Response(200, json=[{"login": "alice", "permission": "admin"}])
     )
+    respx.get(f"{base}/orgs/acme/teams").mock(
+        side_effect=[
+            httpx.Response(200, json=[{"name": "engineering", "slug": "engineering"}]),
+            httpx.Response(200, json=[{"name": "engineering", "slug": "engineering"}]),
+            httpx.Response(200, json=[{"name": "engineering", "slug": "engineering"}]),
+        ]
+    )
+    respx.get(f"{base}/orgs/acme/teams/engineering/members").mock(
+        side_effect=[
+            httpx.Response(200, json=[{"login": "alice", "role": "member"}]),
+            httpx.Response(200, json=[{"login": "alice", "role": "member"}]),
+            httpx.Response(200, json=[{"login": "alice", "role": "member"}]),
+        ]
+    )
     respx.delete(f"{base}/repos/acme/demo/collaborators/alice").mock(
         return_value=httpx.Response(204)
     )
@@ -116,9 +130,12 @@ def test_github_pagination_revoke_restore_and_rate_headers() -> None:
     )
     provider = GitHubProvider("acme", "token", repos=("acme/demo",), base_url=base)
     assert_provider_contract(provider)
-    collaborator = next(
-        item for item in provider.snapshot() if item.raw.get("kind") == "collaborator"
-    )
+    snapshot = tuple(provider.snapshot())
+    collaborator = next(item for item in snapshot if item.raw.get("kind") == "collaborator")
+    team_member = next(item for item in snapshot if item.raw.get("kind") == "team_membership")
+    assert team_member.identity_id == "alice"
+    assert team_member.resource == "team:acme/engineering"
+    assert team_member.revocable is False
     assert collaborator.last_used_at == datetime(2026, 1, 1, tzinfo=UTC)
     assert provider.revoke(collaborator, True).ok
     result = provider.revoke(collaborator, False)
@@ -213,6 +230,7 @@ def test_github_snapshot_discovers_all_visible_repositories_when_unbounded() -> 
     respx.get(f"{base}/repos/acme/zeta/collaborators").mock(
         return_value=httpx.Response(200, json=[{"login": "alice", "permission": "push"}])
     )
+    respx.get(f"{base}/orgs/acme/teams").mock(return_value=httpx.Response(200, json=[]))
 
     provider = GitHubProvider("acme", "token", base_url=base)
     resources = {

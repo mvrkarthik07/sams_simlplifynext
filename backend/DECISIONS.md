@@ -778,3 +778,20 @@ role access to every Bedrock model.
 
 **Reversal cost:** Low; enable Claude access and remove the fallback once the account entitlement
 is approved.
+
+## 2026-09-07 — github — Include team memberships in dashboard snapshots
+
+**Ambiguity:** The GitHub connector could list teams for MCP inventory and mutate team membership,
+but its dashboard snapshot only emitted organization membership, PAT, and direct repository
+collaborator records. Team access added after the previous scan therefore never reached the
+register.
+
+**Chose:** Read each visible organization team's paginated members during an explicit GitHub scan
+and emit stable, observe-only `team:<org>/<slug>` entitlements with the member role preserved in
+raw evidence. Direct collaborator behavior remains unchanged.
+
+**Rejected:** Inferring team membership from repository collaborators or making team records
+revocable before a team-specific executor/pre-image path exists.
+
+**Reversal cost:** Low; remove the team-membership emission while retaining the provider's existing
+MCP team inventory and write operations.

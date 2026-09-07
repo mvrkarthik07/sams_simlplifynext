@@ -20,6 +20,7 @@ from deadbolt.providers.github import GitHubProvider
 pytestmark = pytest.mark.m9
 _TOOL_RESULT_PARTS = 2
 _HTTP_OK = 200
+_HTTP_UNAUTHORIZED = 401
 
 
 def _call(server: FastMCP[None], name: str, arguments: dict[str, object]) -> tuple[object, object]:
@@ -125,6 +126,9 @@ def test_github_iam_tools_preview_writes_and_read_live_inventory() -> None:
     )
     respx.get(f"{base}/orgs/acme/teams").mock(
         return_value=httpx.Response(200, json=[{"slug": "engineering", "name": "Engineering"}])
+    )
+    respx.get(f"{base}/orgs/acme/teams/engineering/members").mock(
+        return_value=httpx.Response(200, json=[{"login": "alice", "role": "member"}])
     )
     respx.get(f"{base}/orgs/acme/memberships/alice").mock(
         return_value=httpx.Response(200, json={"login": "alice", "state": "active"})
@@ -262,3 +266,51 @@ def test_lambda_adapter_completes_mcp_initialize() -> None:
     second_response = lambda_handler(event, object())
     assert isinstance(second_response, dict)
     assert second_response["statusCode"] == _HTTP_OK
+
+
+def test_lambda_adapter_publishes_oauth_resource_metadata(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("COGNITO_REGION", "us-east-1")
+    monkeypatch.setenv("COGNITO_OAUTH_DOMAIN", "deadbolt-123")
+    response = lambda_handler(
+        {
+            "rawPath": "/.well-known/oauth-protected-resource",
+            "headers": {
+                "host": "mcp.example.com",
+                "x-forwarded-proto": "https",
+            },
+        },
+        object(),
+    )
+    assert isinstance(response, dict)
+    assert response["statusCode"] == _HTTP_OK
+    metadata = json.loads(str(response["body"]))
+    assert metadata["resource"] == "https://mcp.example.com/mcp"
+    assert metadata["authorization_servers"] == [
+        "https://deadbolt-123.auth.us-east-1.amazoncognito.com"
+    ]
+
+
+def test_lambda_adapter_challenges_unauthenticated_mcp_client(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("DEADBOLT_AUTH_REQUIRED", "1")
+    monkeypatch.setenv("COGNITO_REGION", "us-east-1")
+    monkeypatch.setenv("COGNITO_USER_POOL_ID", "pool")
+    monkeypatch.setenv("COGNITO_CLIENT_ID", "web-client")
+    response = lambda_handler(
+        {
+            "rawPath": "/mcp",
+            "headers": {"host": "mcp.example.com"},
+        },
+        object(),
+    )
+    assert isinstance(response, dict)
+    assert response["statusCode"] == _HTTP_UNAUTHORIZED
+    headers = response["headers"]
+    assert isinstance(headers, dict)
+    assert (
+        'resource_metadata="https://mcp.example.com/.well-known/oauth-protected-resource"'
+        in str(headers["WWW-Authenticate"])
+    )

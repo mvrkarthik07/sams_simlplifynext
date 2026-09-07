@@ -225,6 +225,12 @@ class GitHubProvider:
         """List organization teams and their stable IDs/slugs."""
         return self._paged(f"/orgs/{self.org}/teams?per_page=100")
 
+    def team_members(self, team_slug: str) -> tuple[Mapping[str, object], ...]:
+        """List members of one organization team."""
+        if not team_slug:
+            raise ProviderError("GitHub team slug is required")
+        return self._paged(f"/orgs/{self.org}/teams/{team_slug}/members?per_page=100")
+
     def membership(self, username: str) -> Mapping[str, object]:
         """Return one user's organization membership state."""
         return self._object(
@@ -315,7 +321,7 @@ class GitHubProvider:
                 discovered.add(full_name)
         return tuple(sorted(discovered, key=lambda value: value.encode("utf-8")))
 
-    def snapshot(self) -> Iterable[Entitlement]:
+    def snapshot(self) -> Iterable[Entitlement]:  # noqa: PLR0912 — normalize token, collaborator, and team records.
         if not self.org:
             raise ProviderError("GitHub organization is required")
         members = self._paged(f"/orgs/{self.org}/members")
@@ -402,6 +408,38 @@ class GitHubProvider:
                             "collaborator": dict(collaborator),
                             "token_scopes": scopes,
                             "token_last_used_at": last_used,
+                        },
+                    )
+                )
+        for team in self.teams():
+            team_slug = _text(team.get("slug"))
+            if not team_slug:
+                continue
+            for member in self.team_members(team_slug):
+                member_login = _text(member.get("login"))
+                if not member_login:
+                    continue
+                team_role = _text(member.get("role"), "member")
+                team_scope = Scope.WRITE if team_role == "maintainer" else Scope.READ
+                entitlements.append(
+                    Entitlement(
+                        member_login,
+                        self.system,
+                        f"team:{self.org}/{team_slug}",
+                        team_scope,
+                        None,
+                        None,
+                        CredentialType.FEDERATED,
+                        False,
+                        {
+                            "kind": "team_membership",
+                            "login": member_login,
+                            "organization": self.org,
+                            "team": team_slug,
+                            "team_name": _text(team.get("name"), team_slug),
+                            "role": team_role,
+                            "member": dict(member),
+                            "team_record": dict(team),
                         },
                     )
                 )
