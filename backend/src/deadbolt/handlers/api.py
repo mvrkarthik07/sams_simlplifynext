@@ -11,6 +11,7 @@ from typing import Final, cast
 
 from deadbolt.api import DemoApi, dynamo_register_state_store
 from deadbolt.auth import AuthenticationError, authorize_event
+from deadbolt.broker.negotiate import BedrockLLMClient
 from deadbolt.connections import ConnectionService, SsmConnectionStore
 
 _JSON_HEADERS: Final[dict[str, str]] = {
@@ -25,10 +26,16 @@ _JsonObject = dict[str, object]
 
 @lru_cache(maxsize=1)
 def _service() -> DemoApi:
+    llm_client = (
+        BedrockLLMClient()
+        if os.environ.get("DEADBOLT_LLM_MODE", "demo").lower() == "bedrock"
+        else None
+    )
     return DemoApi(
         capture_dir=os.environ.get("DEADBOLT_CAPTURE_DIR"),
         connection_service=ConnectionService(SsmConnectionStore()),
         state_store=dynamo_register_state_store(os.environ.get("DEADBOLT_GRAPH_TABLE_NAME")),
+        llm_client=llm_client,
     )
 
 

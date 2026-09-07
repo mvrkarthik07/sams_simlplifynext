@@ -746,3 +746,18 @@ automatically rescanning GitHub on every page load.
 
 **Reversal cost:** Low; restore the delayed client flow if the product adopts a transactional
 approval queue with a server-side cancellation token.
+
+## 2026-09-07 — broker — Use live Bedrock in the deployed approval path
+
+**Ambiguity:** The repository contained a Bedrock client and model IDs, but the browser API always
+injected the deterministic demo client, so deployed negotiation never made a model call.
+
+**Chose:** Keep the deterministic client as the default for local and fixture tests, while the
+deployed API explicitly selects `BedrockLLMClient` and receives least-privilege
+`bedrock:Converse` access for Nova Lite and Claude 3 Haiku only.
+
+**Rejected:** Calling Bedrock from every finding load, allowing arbitrary model IDs, or removing
+the deterministic test port.
+
+**Reversal cost:** Low; unset the deployment mode and remove the API role statement if the broker
+moves to a separately deployed service.

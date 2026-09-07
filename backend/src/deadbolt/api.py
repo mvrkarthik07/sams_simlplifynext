@@ -24,7 +24,7 @@ from uuid import uuid4
 
 import boto3  # type: ignore[import-untyped]  # boto3 does not publish strict typing metadata.
 
-from deadbolt.broker.negotiate import MemoryProposalStore, negotiate_decision
+from deadbolt.broker.negotiate import LLMClient, MemoryProposalStore, negotiate_decision
 from deadbolt.connections import ConnectionService, MemoryConnectionStore
 from deadbolt.contracts.models import ActionResult, CredentialType, Entitlement, Scope
 from deadbolt.engine.drift import Finding
@@ -346,6 +346,7 @@ class DemoApi:
         capture_dir: str | Path | None = None,
         connection_service: ConnectionService | None = None,
         state_store: _RegisterStateStore | None = None,
+        llm_client: LLMClient | None = None,
     ) -> None:
         self._lock = RLock()
         self._state_store = state_store
@@ -387,6 +388,7 @@ class DemoApi:
         ]
         self._proposals = MemoryProposalStore()
         self._connections = connection_service or ConnectionService(MemoryConnectionStore())
+        self._llm_client = llm_client or _DemoLLM()
 
     def _finding(self, finding_id: str) -> Finding:
         try:
@@ -494,7 +496,7 @@ class DemoApi:
                 finding,
                 self._plan,
                 graph=self.scenario.entitlements(),
-                llm_client=_DemoLLM(),
+                llm_client=self._llm_client,
                 action=action,
                 approver_id=approver,
                 reason=reason,

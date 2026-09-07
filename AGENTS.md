@@ -760,3 +760,11 @@ reload during the Undo window silently discarded the decision and restored the l
 capture. Decisions now send immediately, update the row optimistically, and retain an eight-second
 Undo action after the API confirms the mutation. The deployed SPA must be rebuilt and synced after
 this change.
+
+### 6.15 Live Bedrock broker wiring — 2026-09-07
+
+The API now selects `BedrockLLMClient` when the deployed `DEADBOLT_LLM_MODE=bedrock` setting is
+present. The local default remains `_DemoLLM` for fixture tests. The API Lambda role is restricted
+to `bedrock:Converse` on `amazon.nova-lite-v1:0` and
+`anthropic.claude-3-haiku-20240307-v1:0`. Code and CDK synthesis are verified locally; a redeploy
+is still required after refreshing the expired `hackathon` AWS credentials.

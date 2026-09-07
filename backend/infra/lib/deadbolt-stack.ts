@@ -28,6 +28,8 @@ export class DeadboltStack extends Stack {
   public readonly auditBucket: s3.Bucket;
   public readonly operatorUserPool: cognito.UserPool;
   public readonly operatorUserPoolClient: cognito.UserPoolClient;
+  public readonly mcpOAuthClient: cognito.UserPoolClient;
+  public readonly operatorUserPoolDomain: cognito.UserPoolDomain;
 
   public constructor(scope: Construct, id: string, props?: StackProps) {
     super(scope, id, props);
@@ -44,11 +46,6 @@ export class DeadboltStack extends Stack {
       signInAliases: { email: true },
       removalPolicy: RemovalPolicy.DESTROY,
     });
-    this.operatorUserPoolClient = this.operatorUserPool.addClient('OperatorWebClient', {
-      authFlows: { userPassword: true },
-      preventUserExistenceErrors: true,
-    });
-
     this.graphTable = new dynamodb.Table(this, 'GraphTable', {
       tableName: 'deadbolt-graph',
       partitionKey: { name: 'PK', type: dynamodb.AttributeType.STRING },
@@ -84,6 +81,24 @@ export class DeadboltStack extends Stack {
       actions: ['s3:GetObject'],
       resources: [spaBucket.arnForObjects('*')],
     }));
+
+    this.operatorUserPoolDomain = this.operatorUserPool.addDomain('OperatorDomain', {
+      cognitoDomain: { domainPrefix: `deadbolt-${this.account}` },
+    });
+    this.operatorUserPoolClient = this.operatorUserPool.addClient('OperatorWebClient', {
+      authFlows: { userPassword: true },
+      preventUserExistenceErrors: true,
+    });
+    const mcpCallbackPort = this.mcpOAuthCallbackPort();
+    this.mcpOAuthClient = this.operatorUserPool.addClient('McpOAuthClient', {
+      generateSecret: false,
+      preventUserExistenceErrors: true,
+      oAuth: {
+        flows: { authorizationCodeGrant: true },
+        scopes: [cognito.OAuthScope.OPENID, cognito.OAuthScope.EMAIL],
+        callbackUrls: [`http://localhost:${mcpCallbackPort}/callback`],
+      },
+    });
     this.deploySpa(spaBucket);
 
     const credentials = CONNECTORS.map((system) => ssm.StringParameter.fromSecureStringParameterAttributes(
@@ -100,6 +115,7 @@ export class DeadboltStack extends Stack {
     const budgetGuard = this.function('BudgetGuard', 'budget-guard', 'budget_guard.handler.lambda_handler', pythonCode);
     const apiHandler = this.function('ApiHandler', 'api', 'deadbolt.handlers.api.lambda_handler', pythonCode);
     const mcpHandler = this.function('McpHandler', 'mcp', 'deadbolt.mcp_lambda.lambda_handler', pythonCode);
+    apiHandler.addEnvironment('DEADBOLT_LLM_MODE', 'bedrock');
 
     this.addLogPolicy(connectors, 'connectors');
     this.addLogPolicy(driftEngine, 'drift-engine');
@@ -111,6 +127,7 @@ export class DeadboltStack extends Stack {
     this.addLogPolicy(mcpHandler, 'mcp');
     this.grantConnectionAccess(apiHandler);
     this.grantRegisterStateAccess(apiHandler);
+    this.grantBedrockAccess(apiHandler);
     this.grantConnectionAccess(mcpHandler);
 
     this.grantConnectorAccess(connectors, credentials, this.snapshotBucket);
@@ -193,6 +210,9 @@ export class DeadboltStack extends Stack {
     new cdk.CfnOutput(this, 'SchedulesEnabled', { value: String(schedulesEnabled) });
     new cdk.CfnOutput(this, 'CognitoUserPoolId', { value: this.operatorUserPool.userPoolId });
     new cdk.CfnOutput(this, 'CognitoClientId', { value: this.operatorUserPoolClient.userPoolClientId });
+    new cdk.CfnOutput(this, 'CognitoOAuthDomain', { value: this.operatorUserPoolDomain.domainName });
+    new cdk.CfnOutput(this, 'McpOAuthClientId', { value: this.mcpOAuthClient.userPoolClientId });
+    new cdk.CfnOutput(this, 'McpOAuthCallbackUrl', { value: `http://localhost:${this.mcpOAuthCallbackPort()}/callback` });
     new cdk.CfnOutput(this, 'CognitoRegion', { value: REGION });
     new cdk.CfnOutput(this, 'AuthRequired', { value: String(authRequired) });
   }
@@ -238,6 +258,8 @@ export class DeadboltStack extends Stack {
         COGNITO_REGION: REGION,
         COGNITO_USER_POOL_ID: this.operatorUserPool.userPoolId,
         COGNITO_CLIENT_ID: this.operatorUserPoolClient.userPoolClientId,
+        COGNITO_OAUTH_DOMAIN: this.operatorUserPoolDomain.domainName.replace(/\.auth\..+$/, ''),
+        COGNITO_MCP_CLIENT_ID: this.mcpOAuthClient.userPoolClientId,
       },
       logGroup: new logs.LogGroup(this, `${id}LogGroup`, {
         logGroupName: `/aws/lambda/deadbolt-${name}`,
@@ -294,6 +316,16 @@ export class DeadboltStack extends Stack {
       || process.env.DEADBOLT_REQUIRE_AUTH === 'true';
   }
 
+  private mcpOAuthCallbackPort(): number {
+    const contextValue = this.node.tryGetContext('mcpOAuthCallbackPort');
+    const raw = contextValue ?? process.env.DEADBOLT_MCP_OAUTH_CALLBACK_PORT ?? '6274';
+    const port = Number(raw);
+    if (!Number.isInteger(port) || port < 1024 || port > 65535) {
+      throw new Error('mcpOAuthCallbackPort must be an integer between 1024 and 65535');
+    }
+    return port;
+  }
+
   private lambdaRole(id: string): iam.Role {
     return new iam.Role(this, id, {
       assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com'),
@@ -325,6 +357,7 @@ export class DeadboltStack extends Stack {
       resources: [`arn:aws:ssm:${REGION}:${this.account}:parameter/deadbolt/connections/*`],
     }));
   }
+
   private grantRegisterStateAccess(fn: lambda.Function): void {
     fn.addToRolePolicy(new iam.PolicyStatement({
       actions: ['dynamodb:GetItem', 'dynamodb:PutItem'],
@@ -332,6 +365,15 @@ export class DeadboltStack extends Stack {
     }));
   }
 
+  private grantBedrockAccess(fn: lambda.Function): void {
+    fn.addToRolePolicy(new iam.PolicyStatement({
+      actions: ['bedrock:Converse'],
+      resources: [
+        `arn:aws:bedrock:${REGION}::foundation-model/amazon.nova-lite-v1:0`,
+        `arn:aws:bedrock:${REGION}::foundation-model/anthropic.claude-3-haiku-20240307-v1:0`,
+      ],
+    }));
+  }
 
   private grantDriftAccess(fn: lambda.Function): void {
     fn.addToRolePolicy(new iam.PolicyStatement({ actions: ['dynamodb:Query', 'dynamodb:GetItem', 'dynamodb:PutItem', 'dynamodb:BatchWriteItem'], resources: [this.graphTable.tableArn, this.graphTable.tableArn + '/index/*'] }));
