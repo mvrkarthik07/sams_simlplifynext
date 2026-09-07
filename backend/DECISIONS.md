@@ -761,3 +761,19 @@ the deterministic test port.
 
 **Reversal cost:** Low; unset the deployment mode and remove the API role statement if the broker
 moves to a separately deployed service.
+
+## 2026-09-07 — broker — Fall back to an enabled Bedrock model for prose
+
+**Ambiguity:** The account has Nova Lite enabled but Claude Haiku model access is not enabled, so
+the configured prose path would fail despite the live Bedrock boundary being correctly deployed.
+
+**Chose:** Keep Claude Haiku as the preferred prose model and retry with Nova Lite only for the
+specific Bedrock availability errors that indicate the preferred model cannot be used. Both calls
+remain bounded, temperature-zero Bedrock calls and the fallback stays inside the same broker
+validation rules.
+
+**Rejected:** Silently returning the deterministic demo text in production or granting the Lambda
+role access to every Bedrock model.
+
+**Reversal cost:** Low; enable Claude access and remove the fallback once the account entitlement
+is approved.

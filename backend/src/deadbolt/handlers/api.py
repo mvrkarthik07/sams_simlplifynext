@@ -11,7 +11,7 @@ from typing import Final, cast
 
 from deadbolt.api import DemoApi, dynamo_register_state_store
 from deadbolt.auth import AuthenticationError, authorize_event
-from deadbolt.broker.negotiate import BedrockLLMClient
+from deadbolt.broker.negotiate import NOVA_LITE_MODEL, BedrockLLMClient
 from deadbolt.connections import ConnectionService, SsmConnectionStore
 
 _JSON_HEADERS: Final[dict[str, str]] = {
@@ -27,7 +27,7 @@ _JsonObject = dict[str, object]
 @lru_cache(maxsize=1)
 def _service() -> DemoApi:
     llm_client = (
-        BedrockLLMClient()
+        BedrockLLMClient(fallback_model_id=NOVA_LITE_MODEL)
         if os.environ.get("DEADBOLT_LLM_MODE", "demo").lower() == "bedrock"
         else None
     )

@@ -14,6 +14,9 @@ from enum import Enum
 from typing import Final, Protocol, cast
 
 import boto3  # type: ignore[import-untyped]  # boto3 does not publish strict typing metadata.
+from botocore.exceptions import (  # type: ignore[import-untyped]  # botocore does not publish strict typing metadata.
+    ClientError,
+)
 
 from deadbolt.contracts.models import Entitlement
 from deadbolt.engine.drift import Finding
@@ -52,20 +55,33 @@ class _BedrockClient(Protocol):
 class BedrockLLMClient:
     """Lazy Bedrock Converse adapter, fixed to the PRD's region."""
 
-    def __init__(self, client: object | None = None) -> None:
+    def __init__(self, client: object | None = None, fallback_model_id: str | None = None) -> None:
         supplied = (
             client
             if client is not None
             else boto3.client("bedrock-runtime", region_name=BEDROCK_REGION)
         )
         self._client = cast(_BedrockClient, supplied)
+        self._fallback_model_id = fallback_model_id
 
     def complete(self, model_id: str, prompt: str) -> str:
-        response = self._client.converse(
-            modelId=model_id,
-            messages=[{"role": "user", "content": [{"text": prompt}]}],
-            inferenceConfig={"maxTokens": 600, "temperature": 0},
-        )
+        try:
+            response = self._converse(model_id, prompt)
+        except ClientError as exc:
+            error_code = str(exc.response.get("Error", {}).get("Code", ""))
+            fallback_codes = {
+                "AccessDeniedException",
+                "ModelNotReadyException",
+                "ResourceNotFoundException",
+                "ValidationException",
+            }
+            if (
+                self._fallback_model_id is None
+                or model_id == self._fallback_model_id
+                or error_code not in fallback_codes
+            ):
+                raise
+            response = self._converse(self._fallback_model_id, prompt)
         output = response.get("output")
         if not isinstance(output, Mapping):
             raise ProviderError("Bedrock response did not contain an output message")
@@ -80,6 +96,13 @@ class BedrockLLMClient:
         if not text:
             raise ProviderError("Bedrock response did not contain text")
         return text
+
+    def _converse(self, model_id: str, prompt: str) -> Mapping[str, object]:
+        return self._client.converse(
+            modelId=model_id,
+            messages=[{"role": "user", "content": [{"text": prompt}]}],
+            inferenceConfig={"maxTokens": 600, "temperature": 0},
+        )
 
 
 @dataclass(frozen=True, slots=True)

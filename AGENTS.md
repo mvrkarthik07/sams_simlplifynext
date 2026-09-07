@@ -768,3 +768,7 @@ present. The local default remains `_DemoLLM` for fixture tests. The API Lambda 
 to `bedrock:Converse` on `amazon.nova-lite-v1:0` and
 `anthropic.claude-3-haiku-20240307-v1:0`. Code and CDK synthesis are verified locally; a redeploy
 is still required after refreshing the expired `hackathon` AWS credentials.
+
+The deployed account currently reports Claude Haiku as unavailable and Nova Lite as available. The
+Bedrock adapter therefore retries Claude prose requests with Nova Lite only on model access or
+availability errors; once Claude access is enabled, it remains the preferred prose model.
