@@ -754,7 +754,8 @@ injected the deterministic demo client, so deployed negotiation never made a mod
 
 **Chose:** Keep the deterministic client as the default for local and fixture tests, while the
 deployed API explicitly selects `BedrockLLMClient` and receives least-privilege
-`bedrock:Converse` access for Nova Lite and Claude 3 Haiku only.
+`bedrock:InvokeModel` access for Nova Lite and Claude 3 Haiku only. Bedrock authorizes the
+Converse API through this action.
 
 **Rejected:** Calling Bedrock from every finding load, allowing arbitrary model IDs, or removing
 the deterministic test port.

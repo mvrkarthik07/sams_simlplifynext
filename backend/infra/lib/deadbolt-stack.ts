@@ -367,7 +367,7 @@ export class DeadboltStack extends Stack {
 
   private grantBedrockAccess(fn: lambda.Function): void {
     fn.addToRolePolicy(new iam.PolicyStatement({
-      actions: ['bedrock:Converse'],
+      actions: ['bedrock:InvokeModel'],
       resources: [
         `arn:aws:bedrock:${REGION}::foundation-model/amazon.nova-lite-v1:0`,
         `arn:aws:bedrock:${REGION}::foundation-model/anthropic.claude-3-haiku-20240307-v1:0`,
