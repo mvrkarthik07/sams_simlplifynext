@@ -697,3 +697,20 @@ then redeploy the API and frontend.
 **Rejected:** Reporting only the earlier passing timing, adding pagination that changes the queue workflow, or reducing the measured source dataset.
 
 **Reversal cost:** Low; remove WindowedFindings and its threshold after an alternative renderer meets the same measured budget.
+
+## 2026-09-07 — register — Persist captured dashboard state across Lambda instances
+
+**Ambiguity:** The browser approval response updated one Lambda execution environment, but the
+subsequent automatic reload could reach another environment and restore the bundled capture from
+many hours earlier. A new provider scan also reset all finding stages in memory.
+
+**Chose:** Remove self-triggered browser reloads after mutations, preserve matching finding stages
+when a scan replaces the snapshot, and persist the latest captured records plus decision stages as
+one JSON payload in the existing DynamoDB graph table. The API role receives only `GetItem` and
+`PutItem` for that table. Fixture-only local runs remain in memory and make no AWS calls.
+
+**Rejected:** Treating a warm Lambda process as durable storage, storing provider decisions in the
+browser alone, or rerunning a live GitHub scan on every GET request.
+
+**Reversal cost:** Medium; remove the register state item, environment variable, IAM grant, and
+restore the in-memory adapter if a dedicated capture/state repository replaces it.

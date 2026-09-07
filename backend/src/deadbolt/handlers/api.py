@@ -8,7 +8,7 @@ import os
 from collections.abc import Mapping
 from typing import Final, cast
 
-from deadbolt.api import DemoApi
+from deadbolt.api import DemoApi, dynamo_register_state_store
 from deadbolt.auth import AuthenticationError, authorize_event
 from deadbolt.connections import ConnectionService, SsmConnectionStore
 
@@ -22,6 +22,7 @@ _HTTP_UNAUTHORIZED: Final[int] = 401
 _LAMBDA_SERVICE = DemoApi(
     capture_dir=os.environ.get("DEADBOLT_CAPTURE_DIR"),
     connection_service=ConnectionService(SsmConnectionStore()),
+    state_store=dynamo_register_state_store(os.environ.get("DEADBOLT_GRAPH_TABLE_NAME")),
 )
 _JsonObject = dict[str, object]
 

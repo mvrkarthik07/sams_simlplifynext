@@ -18,13 +18,15 @@ from datetime import UTC, datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from threading import RLock
-from typing import Final, cast
+from typing import Final, Protocol, cast
 from urllib.parse import unquote, urlparse
 from uuid import uuid4
 
+import boto3  # type: ignore[import-untyped]  # boto3 does not publish strict typing metadata.
+
 from deadbolt.broker.negotiate import MemoryProposalStore, negotiate_decision
 from deadbolt.connections import ConnectionService, MemoryConnectionStore
-from deadbolt.contracts.models import ActionResult, Entitlement
+from deadbolt.contracts.models import ActionResult, CredentialType, Entitlement, Scope
 from deadbolt.engine.drift import Finding
 from deadbolt.graph.capture import CapturedProvider
 from deadbolt.plan.builder import Action, Plan
@@ -43,6 +45,8 @@ _JSON_HEADERS: Final[dict[str, str]] = {
 }
 _Key = tuple[str, str, str, str]
 _JsonObject = dict[str, object]
+_STATE_VALUE_LENGTH: Final[int] = 2
+_KEY_LENGTH: Final[int] = 4
 
 
 class _ReadOnlySnapshotProvider:
@@ -62,6 +66,69 @@ class _ReadOnlySnapshotProvider:
     def restore(self, pre_image: Mapping[str, object]) -> ActionResult:
         del pre_image
         raise RuntimeError("live dashboard scans are read-only")
+
+
+class _RegisterStateStore(Protocol):
+    """Small persistence boundary for the latest captured register state."""
+
+    def load(self) -> dict[str, object] | None: ...
+
+    def save(self, value: Mapping[str, object]) -> None: ...
+
+
+class _DynamoClient(Protocol):
+    def get_item(self, **kwargs: object) -> Mapping[str, object]: ...
+
+    def put_item(self, **kwargs: object) -> Mapping[str, object]: ...
+
+
+class _DynamoRegisterStateStore:
+    """Persist the latest scan and decisions in the existing graph table."""
+
+    _PK = "REGISTER#DASHBOARD"
+    _SK = "CURRENT"
+
+    def __init__(self, table_name: str) -> None:
+        self._table_name = table_name
+        self._client: _DynamoClient | None = None
+
+    def _ddb(self) -> _DynamoClient:
+        if self._client is None:
+            self._client = cast(_DynamoClient, boto3.client("dynamodb", region_name="us-east-1"))
+        return self._client
+
+    def load(self) -> dict[str, object] | None:
+        response = self._ddb().get_item(
+            TableName=self._table_name,
+            Key={"PK": {"S": self._PK}, "SK": {"S": self._SK}},
+            ConsistentRead=True,
+        )
+        raw_item = response.get("Item")
+        if not isinstance(raw_item, Mapping):
+            return None
+        raw_payload = raw_item.get("payload")
+        if not isinstance(raw_payload, Mapping):
+            return None
+        encoded = raw_payload.get("S")
+        if not isinstance(encoded, str):
+            return None
+        decoded = json.loads(encoded)
+        return dict(decoded) if isinstance(decoded, Mapping) else None
+
+    def save(self, value: Mapping[str, object]) -> None:
+        self._ddb().put_item(
+            TableName=self._table_name,
+            Item={
+                "PK": {"S": self._PK},
+                "SK": {"S": self._SK},
+                "payload": {"S": json.dumps(value, separators=(",", ":"), ensure_ascii=True)},
+            },
+        )
+
+
+def dynamo_register_state_store(table_name: str | None) -> _RegisterStateStore | None:
+    """Construct the optional durable register state store for a deployed API."""
+    return _DynamoRegisterStateStore(table_name) if table_name else None
 
 
 def _key(entitlement: Entitlement) -> _Key:
@@ -93,12 +160,99 @@ def _entitlement_wire(entitlement: Entitlement) -> _JsonObject:
     }
 
 
+def _datetime_value(value: object) -> datetime | None:
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise ValueError("stored entitlement timestamp must be text")
+    return datetime.fromisoformat(value.replace("Z", "+00:00"))
+
+
+def _entitlement_from_wire(value: object) -> Entitlement:
+    if not isinstance(value, Mapping):
+        raise ValueError("stored entitlement must be an object")
+    required = ("identity_id", "system", "resource", "scope", "credential_type")
+    fields = {name: value.get(name) for name in required}
+    if not all(isinstance(item, str) and item for item in fields.values()):
+        raise ValueError("stored entitlement is missing required fields")
+    raw = value.get("raw", {})
+    if not isinstance(raw, Mapping):
+        raise ValueError("stored entitlement raw value must be an object")
+    return Entitlement(
+        identity_id=cast(str, fields["identity_id"]),
+        system=cast(str, fields["system"]),
+        resource=cast(str, fields["resource"]),
+        scope=Scope(cast(str, fields["scope"])),
+        granted_at=_datetime_value(value.get("granted_at")),
+        last_used_at=_datetime_value(value.get("last_used_at")),
+        credential_type=CredentialType(cast(str, fields["credential_type"])),
+        revocable=bool(value.get("revocable", False)),
+        raw=dict(raw),
+    )
+
+
 def _finding_key(finding: Finding) -> _Key:
     return _key(finding.entitlement)
 
 
 def _finding_id(finding: Finding, ids: Mapping[_Key, str]) -> str:
     return ids[_finding_key(finding)]
+
+
+def _state_key(key: _Key) -> str:
+    return "\x1f".join(key)
+
+
+def _scenario_for_snapshot(system: str, records: tuple[Entitlement, ...]) -> Scenario:
+    expected_findings = tuple(
+        ScenarioFinding(
+            identity_id=item.identity_id,
+            system=item.system,
+            resource=item.resource,
+            scope=item.scope.value,
+        )
+        for item in records
+    )
+    return Scenario(
+        providers=(_ReadOnlySnapshotProvider(system, records),),
+        identities={},
+        templates={},
+        reachability=_reachability_from_snapshot(records),
+        expected_findings=expected_findings,
+        ratified_entitlements=(),
+    )
+
+
+def _scenario_from_state(
+    value: Mapping[str, object],
+) -> tuple[Scenario, dict[_Key, tuple[str, str]]] | None:
+    if value.get("version") != 1 or value.get("kind") != "captured":
+        return None
+    provider = value.get("provider")
+    raw_records = value.get("records")
+    if not isinstance(provider, str) or not isinstance(raw_records, list):
+        return None
+    try:
+        records = tuple(_entitlement_from_wire(item) for item in raw_records)
+    except (TypeError, ValueError):
+        return None
+    raw_states = value.get("states", {})
+    if not isinstance(raw_states, Mapping):
+        return None
+    states: dict[_Key, tuple[str, str]] = {}
+    for raw_key, raw_state in raw_states.items():
+        if (
+            not isinstance(raw_key, str)
+            or not isinstance(raw_state, list)
+            or len(raw_state) != _STATE_VALUE_LENGTH
+        ):
+            continue
+        if not all(isinstance(item, str) for item in raw_state):
+            continue
+        parts = tuple(raw_key.split("\x1f"))
+        if len(parts) == _KEY_LENGTH:
+            states[cast(_Key, parts)] = (raw_state[0], raw_state[1])
+    return _scenario_for_snapshot(provider, records), states
 
 
 def _finding_wire(
@@ -191,9 +345,17 @@ class DemoApi:
         *,
         capture_dir: str | Path | None = None,
         connection_service: ConnectionService | None = None,
+        state_store: _RegisterStateStore | None = None,
     ) -> None:
         self._lock = RLock()
-        self.scenario = scenario or _scenario_from_capture(capture_dir)
+        self._state_store = state_store
+        persisted_states: dict[_Key, tuple[str, str]] = {}
+        persisted = state_store.load() if state_store is not None else None
+        restored = _scenario_from_state(persisted) if persisted is not None else None
+        if restored is not None:
+            self.scenario, persisted_states = restored
+        else:
+            self.scenario = scenario or _scenario_from_capture(capture_dir)
         self._findings = self.scenario.findings(DEFAULT_EVALUATED_AT)
         self._ids = {
             _finding_key(finding): f"FIND-{index:03d}"
@@ -204,10 +366,13 @@ class DemoApi:
             self._finding_by_id[_finding_id(finding, self._ids)] = finding
         self._plan = self.scenario.plan(DEFAULT_EVALUATED_AT)
         self._states: dict[str, tuple[str, str]] = {
-            finding_id: ("Verified", "passed")
-            if finding_id == "FIND-002"
-            else ("Approval", "blocked-on-approval")
-            for finding_id in self._finding_by_id
+            finding_id: persisted_states.get(
+                _finding_key(finding),
+                ("Verified", "passed")
+                if finding_id == "FIND-002"
+                else ("Approval", "blocked-on-approval"),
+            )
+            for finding_id, finding in self._finding_by_id.items()
         }
         self._audit: list[_JsonObject] = [
             {
@@ -228,6 +393,26 @@ class DemoApi:
             return self._finding_by_id[finding_id]
         except KeyError as exc:
             raise KeyError(f"finding not found: {finding_id}") from exc
+
+    def _persist_state(self) -> None:
+        if self._state_store is None or not self.scenario.providers:
+            return
+        records = self.scenario.entitlements()
+        if not records or any(item.raw.get("source") != "captured" for item in records):
+            return
+        states = {
+            _state_key(_finding_key(finding)): list(self._states[finding_id])
+            for finding_id, finding in self._finding_by_id.items()
+        }
+        self._state_store.save(
+            {
+                "version": 1,
+                "kind": "captured",
+                "provider": self.scenario.providers[0].system,
+                "records": [_entitlement_wire(item) for item in records],
+                "states": states,
+            }
+        )
 
     def findings(self) -> list[_JsonObject]:
         with self._lock:
@@ -338,6 +523,7 @@ class DemoApi:
             else:
                 details = f"Template proposal {result.proposal_id} recorded for human ratification."
             self._append_audit(action_name, approver, details, reason=reason)
+            self._persist_state()
             return self.finding(finding_id)
 
     def rollback(self, finding_id: str) -> _JsonObject:
@@ -349,6 +535,7 @@ class DemoApi:
                 "Admin",
                 "Fixture pre-image rollback verified; no external mutation was performed.",
             )
+            self._persist_state()
             return self.finding(finding_id)
 
     def scan(self, subject: str, provider: str) -> _JsonObject:
@@ -365,25 +552,12 @@ class DemoApi:
             )
             for record in records
         )
-        live_provider = _ReadOnlySnapshotProvider(provider, marked_records)
-        expected_findings = tuple(
-            ScenarioFinding(
-                identity_id=item.identity_id,
-                system=item.system,
-                resource=item.resource,
-                scope=item.scope.value,
-            )
-            for item in marked_records
-        )
-        scenario = Scenario(
-            providers=(live_provider,),
-            identities={},
-            templates={},
-            reachability=_reachability_from_snapshot(marked_records),
-            expected_findings=expected_findings,
-            ratified_entitlements=(),
-        )
+        scenario = _scenario_for_snapshot(provider, marked_records)
         with self._lock:
+            previous_states = {
+                _finding_key(finding): self._states[finding_id]
+                for finding_id, finding in self._finding_by_id.items()
+            }
             self.scenario = scenario
             self._findings = scenario.findings(DEFAULT_EVALUATED_AT)
             self._ids = {
@@ -395,8 +569,10 @@ class DemoApi:
             }
             self._plan = scenario.plan(DEFAULT_EVALUATED_AT)
             self._states = {
-                finding_id: ("Approval", "blocked-on-approval")
-                for finding_id in self._finding_by_id
+                finding_id: previous_states.get(
+                    _finding_key(finding), ("Approval", "blocked-on-approval")
+                )
+                for finding_id, finding in self._finding_by_id.items()
             }
             self._append_audit(
                 "Provider Scan",
@@ -406,6 +582,7 @@ class DemoApi:
                     f"{len(records)} records loaded."
                 ),
             )
+            self._persist_state()
         return {
             **summary,
             "message": f"Read-only scan loaded {len(records)} records into the dashboard.",

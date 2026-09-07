@@ -24,7 +24,7 @@ import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw.mjs';
 import Search from 'lucide-react/dist/esm/icons/search.mjs';
 import LockKeyhole from 'lucide-react/dist/esm/icons/lock-keyhole.mjs';
 import { useNavigate } from 'react-router-dom';
-import { api, DATA_CHANGED_EVENT } from '../lib/api';
+import { api } from '../lib/api';
 import { isUnauthenticatedMode } from '../lib/auth';
 import type { Finding, Metrics, ConnectionProvider } from '../lib/types';
 import {
@@ -180,9 +180,6 @@ function Register() {
     const invalidate = () => {
       sequence.current++;
     };
-    const changed = () => {
-      void load();
-    };
     const timer = window.setInterval(() => setNow(Date.now()), 30_000);
     const shortcut = (event: globalThis.KeyboardEvent) => {
       if (
@@ -194,14 +191,12 @@ function Register() {
         searchRef.current?.focus();
       }
     };
-    window.addEventListener(DATA_CHANGED_EVENT, changed);
     window.addEventListener('keydown', shortcut);
     return () => {
       canceled = true;
       invalidate();
       window.clearInterval(timer);
       if (pendingTimer.current) clearTimeout(pendingTimer.current);
-      window.removeEventListener(DATA_CHANGED_EVENT, changed);
       window.removeEventListener('keydown', shortcut);
     };
   }, [load]);

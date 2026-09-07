@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import json
+from collections.abc import Mapping
 from datetime import UTC, datetime
 from http.client import HTTPResponse
 from http.server import ThreadingHTTPServer
@@ -14,7 +15,7 @@ from urllib.request import Request, urlopen
 
 import pytest
 
-from deadbolt.api import DemoApi, _RequestHandler, lambda_handler
+from deadbolt.api import DemoApi, _RequestHandler, dynamo_register_state_store, lambda_handler
 from deadbolt.connections import ConnectionService, MemoryConnectionStore
 from deadbolt.contracts.models import CredentialType, Entitlement, Scope
 from deadbolt.graph.capture import write_capture
@@ -125,9 +126,19 @@ def test_authenticated_scan_promotes_a_read_only_provider_snapshot(
         def snapshot(self) -> tuple[Entitlement, ...]:
             return (entitlement,)
 
+    class _StateStore:
+        value: dict[str, object] | None = None
+
+        def load(self) -> dict[str, object] | None:
+            return self.value
+
+        def save(self, value: Mapping[str, object]) -> None:
+            self.value = dict(value)
+
     monkeypatch.setattr("deadbolt.connections.GitHubProvider", lambda *args, **kwargs: _Provider())
     service = ConnectionService(MemoryConnectionStore())
-    api = DemoApi(connection_service=service)
+    state_store = _StateStore()
+    api = DemoApi(connection_service=service, state_store=state_store)
     api.handle(
         "POST",
         "/api/connections/github",
@@ -149,6 +160,58 @@ def test_authenticated_scan_promotes_a_read_only_provider_snapshot(
     assert len(findings) == 1
     assert findings[0]["entitlement"]["resource"] == "acme/platform"
     assert findings[0]["source"] == "captured"
+
+    status, approved = api.handle(
+        "POST",
+        "/api/findings/FIND-001/decision",
+        {"action": "Approve", "approver": "Test Approver"},
+        subject="operator",
+    )
+    assert status == HTTP_OK
+    assert isinstance(approved, dict)
+    assert approved["current_stage"] == "Verified"
+
+    status, _ = api.handle(
+        "POST",
+        "/api/connections/github",
+        {"action": "scan"},
+        subject="operator",
+    )
+    assert status == HTTP_OK
+    refreshed = api.findings()
+    assert refreshed[0]["current_stage"] == "Verified"
+    assert refreshed[0]["stage_status"] == "passed"
+
+    cold_start = DemoApi(connection_service=service, state_store=state_store)
+    persisted = cold_start.findings()
+    assert persisted[0]["current_stage"] == "Verified"
+    assert persisted[0]["stage_status"] == "passed"
+
+
+def test_durable_register_state_store_round_trips_payload(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _Dynamo:
+        item: dict[str, object] | None = None
+
+        def get_item(self, **kwargs: object) -> dict[str, object]:
+            del kwargs
+            return {} if self.item is None else {"Item": self.item}
+
+        def put_item(self, **kwargs: object) -> dict[str, object]:
+            value = kwargs.get("Item")
+            assert isinstance(value, dict)
+            self.item = value
+            return {}
+
+    dynamo = _Dynamo()
+    monkeypatch.setattr("deadbolt.api.boto3.client", lambda *args, **kwargs: dynamo)
+    assert dynamo_register_state_store(None) is None
+    store = dynamo_register_state_store("deadbolt-graph")
+    assert store is not None
+    assert store.load() is None
+    store.save({"version": 1, "kind": "captured", "records": []})
+    assert store.load() == {"version": 1, "kind": "captured", "records": []}
 
 
 def test_captured_read_access_reduction_records_a_verified_staged_revoke(tmp_path) -> None:

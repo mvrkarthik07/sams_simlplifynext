@@ -110,6 +110,7 @@ export class DeadboltStack extends Stack {
     this.addLogPolicy(apiHandler, 'api');
     this.addLogPolicy(mcpHandler, 'mcp');
     this.grantConnectionAccess(apiHandler);
+    this.grantRegisterStateAccess(apiHandler);
     this.grantConnectionAccess(mcpHandler);
 
     this.grantConnectorAccess(connectors, credentials, this.snapshotBucket);
@@ -232,6 +233,7 @@ export class DeadboltStack extends Stack {
         PYTHONPATH: 'src',
         // The handler falls back to fixtures when this optional artifact is absent.
         DEADBOLT_CAPTURE_DIR: 'artifacts/captures',
+        DEADBOLT_GRAPH_TABLE_NAME: this.graphTable.tableName,
         DEADBOLT_AUTH_REQUIRED: String(this.authRequired()),
         COGNITO_REGION: REGION,
         COGNITO_USER_POOL_ID: this.operatorUserPool.userPoolId,
@@ -323,6 +325,13 @@ export class DeadboltStack extends Stack {
       resources: [`arn:aws:ssm:${REGION}:${this.account}:parameter/deadbolt/connections/*`],
     }));
   }
+  private grantRegisterStateAccess(fn: lambda.Function): void {
+    fn.addToRolePolicy(new iam.PolicyStatement({
+      actions: ['dynamodb:GetItem', 'dynamodb:PutItem'],
+      resources: [this.graphTable.tableArn],
+    }));
+  }
+
 
   private grantDriftAccess(fn: lambda.Function): void {
     fn.addToRolePolicy(new iam.PolicyStatement({ actions: ['dynamodb:Query', 'dynamodb:GetItem', 'dynamodb:PutItem', 'dynamodb:BatchWriteItem'], resources: [this.graphTable.tableArn, this.graphTable.tableArn + '/index/*'] }));

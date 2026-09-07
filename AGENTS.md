@@ -738,3 +738,17 @@ merged/pushed only after preserving unrelated existing working-tree edits; those
 uncommitted and must not be swept into later commits without review. The hosted dashboard and API
 still require the documented authenticated redeploy procedure before these local frontend changes
 appear in AWS.
+
+### 6.13 Capture decision persistence hotfix — 2026-09-07
+
+The first deployed register version kept scan and approval state only in a Lambda execution
+environment. A post-decision browser reload could therefore reach another environment, restore the
+bundled older capture, and show approved findings as pending again. The hotfix removes mutation-
+triggered self-reloads, preserves matching stages across a new provider scan, and stores the latest
+captured records plus decision stages in the existing `deadbolt-graph` DynamoDB table. The API
+Lambda has only `GetItem` and `PutItem` permission for the register state item. Local fixture runs
+continue to use an injected in-memory store and do not contact AWS.
+
+The regression test covers approve → scan → cold-start reload. `make gate-m12r && make guard` passes
+with 139 non-live tests and 85.08% coverage. Redeploy the API stack with `requireAuth=true`, then
+rebuild/sync the SPA if the deployed bucket needs the matching frontend bundle.
