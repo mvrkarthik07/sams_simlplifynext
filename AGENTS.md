@@ -705,9 +705,9 @@ checks. Never destroy unrelated resources in the hackathon account.
 
 ### 6.12 Entitlement register UI completion — 2026-09-07
 
-The entitlement-register presentation refinement is complete on branch
-`feat/entitlement-register-polish` in commits `e1ce071` and `d7f975a`. The commits are ready to
-merge into `main`; they have not changed backend contracts or provider behavior. The implementation
+The entitlement-register presentation refinement is complete on `main` through commits
+`e1ce071`, `d7f975a`, `3de83f7`, `9959329`, `46fc370`, and `fdd41dd`. These commits have not
+changed backend contracts or provider behavior. The implementation
 is a React 19.2/Vite 8 SPA with Tailwind 3.4 configuration; it is not a Next.js application.
 
 The register now has self-hosted IBM Plex Sans/Mono fonts, graphite dark and warm-neutral light
