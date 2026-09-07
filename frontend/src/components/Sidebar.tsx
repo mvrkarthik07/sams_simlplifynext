@@ -10,7 +10,6 @@ import Menu from 'lucide-react/dist/esm/icons/menu.mjs';
 import X from 'lucide-react/dist/esm/icons/x.mjs';
 import PanelLeftClose from 'lucide-react/dist/esm/icons/panel-left-close.mjs';
 import PanelLeftOpen from 'lucide-react/dist/esm/icons/panel-left-open.mjs';
-import LockKeyhole from 'lucide-react/dist/esm/icons/lock-keyhole.mjs';
 import { clearSession, isAuthConfigured } from '../lib/auth';
 import { applyTheme, getInitialTheme, type Theme } from '../lib/theme';
 const navItems = [
@@ -51,7 +50,12 @@ export function Sidebar() {
             <Menu size={16} aria-hidden="true" />
           )}
         </button>
-        <LockKeyhole size={18} className="brand-symbol" aria-hidden="true" />
+        <img
+          src="/brand/logo-tile.svg"
+          alt=""
+          className="register-brand-logo"
+          aria-hidden="true"
+        />
         <span className="sidebar-label">Deadbolt</span>
         <button
           className="register-icon-button collapse-button"
